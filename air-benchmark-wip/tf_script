@@ -4,23 +4,18 @@ import tensorflow as tf
 import numpy as np
 import time
 
-dataset_size = 100
-image_dims = (1, 224, 224, 3)
-
-dataset = np.zeros((dataset_size, *image_dims), dtype=np.uint8)
-labels = np.zeros((dataset_size, 1), dtype=np.int32)
+data = np.load('preprocessed_data.npy')
+dataset, labels = data[:, :, :, :, :, -1], data[:, -1, -1, -1, -1]
+#dataset = np.zeros((dataset_size, *image_dims, 1), dtype=np.int32)
 
 train_examples = dataset
 train_labels = labels
 
 train_dataset = tf.data.Dataset.from_tensor_slices((train_examples, train_labels))
 
+# TODO make sure number of classes is equal to MLPerf benchmark
 model = tf.keras.applications.resnet50.ResNet50(
     weights=None,
-    #input_tensor=None,
-    #input_shape=None,
-    #pooling=None,
-    #classes=1000,
 )
 
 # TODO make sure optimizer and loss are what the MLPerf benchmark uses.
@@ -41,4 +36,4 @@ time_callback = TimeHistory()
 model.fit(train_dataset, epochs=3, callbacks=[time_callback])
 
 for epoch, epoch_time in enumerate(time_callback.times):
-    print(f'Epoch {epoch+1}: {epoch_time:.2f}ms')
+    print(f'Epoch {epoch+1}: {epoch_time:.2f}s')
