@@ -2,23 +2,18 @@
 
 import tensorflow as tf
 import numpy as np
+import time
 
-
-dataset_size = 1000
+dataset_size = 100
 image_dims = (1, 224, 224, 3)
-train_dataset_size_ratio = 0.8
 
-dataset = np.empty((dataset_size, *image_dims), dtype=np.uint8)
-labels = np.empty((dataset_size, 1), dtype=np.int32)
+dataset = np.zeros((dataset_size, *image_dims), dtype=np.uint8)
+labels = np.zeros((dataset_size, 1), dtype=np.int32)
 
-train_examples = dataset[:int(dataset_size * train_dataset_size_ratio)]
-train_labels = labels[:int(dataset_size * train_dataset_size_ratio)]
-
-#test_examples  = dataset[int(dataset_size * train_dataset_size_ratio):]
-#test_labels = labels[int(dataset_size * train_dataset_size_ratio):]
+train_examples = dataset
+train_labels = labels
 
 train_dataset = tf.data.Dataset.from_tensor_slices((train_examples, train_labels))
-#test_dataset = tf.data.Dataset.from_tensor_slices((test_examples, test_labels))
 
 model = tf.keras.applications.resnet50.ResNet50(
     weights=None,
@@ -28,5 +23,22 @@ model = tf.keras.applications.resnet50.ResNet50(
     #classes=1000,
 )
 
+# TODO make sure optimizer and loss are what the MLPerf benchmark uses.
 model.compile(optimizer="rmsprop", loss="sparse_categorical_crossentropy")
-model.fit(train_dataset)
+
+class TimeHistory(tf.keras.callbacks.Callback):
+    def on_train_begin(self, logs={}):
+        self.times = []
+
+    def on_epoch_begin(self, batch, logs={}):
+        self.epoch_time_start = time.time()
+
+    def on_epoch_end(self, batch, logs={}):
+        self.times.append(time.time() - self.epoch_time_start)
+
+time_callback = TimeHistory()
+# TODO make sure the batch size fits MLPerf
+model.fit(train_dataset, epochs=3, callbacks=[time_callback])
+
+for epoch, epoch_time in enumerate(time_callback.times):
+    print(f'Epoch {epoch+1}: {epoch_time:.2f}ms')
