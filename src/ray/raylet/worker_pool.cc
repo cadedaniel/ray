@@ -103,11 +103,15 @@ WorkerPool::WorkerPool(instrumented_io_context &io_service,
   // processes have started before a task runs on the node (as opposed to the
   // metric not existing at all).
   stats::NumWorkersStarted.Record(0);
+
 #ifndef _WIN32
   // Ignore SIGCHLD signals. If we don't do this, then worker processes will
   // become zombies instead of dying gracefully.
   signal(SIGCHLD, SIG_IGN);
 #endif
+
+  RAY_LOG(WARNING) << "WorkerPool constructor";
+
   for (const auto &entry : worker_commands) {
     // Initialize the pool state for this language.
     auto &state = states_by_lang_[entry.first];
@@ -115,11 +119,16 @@ WorkerPool::WorkerPool(instrumented_io_context &io_service,
     // Set worker command for this language.
     state.worker_command = entry.second;
     RAY_CHECK(!state.worker_command.empty()) << "Worker command must not be empty.";
+    RAY_LOG(WARNING) << "Worker command:";
+    for (const auto &cmd : entry.second) {
+        RAY_LOG(WARNING) << cmd;
+    }
   }
   // Initialize free ports list with all ports in the specified range.
   if (!worker_ports.empty()) {
     free_ports_ = std::make_unique<std::queue<int>>();
     for (int port : worker_ports) {
+      RAY_LOG(WARNING) << "Copying from worker_ports, free port: " << port;
       free_ports_->push(port);
     }
   } else if (min_worker_port != 0) {
@@ -129,13 +138,16 @@ WorkerPool::WorkerPool(instrumented_io_context &io_service,
     RAY_CHECK(min_worker_port > 0 && min_worker_port <= 65535);
     RAY_CHECK(max_worker_port >= min_worker_port && max_worker_port <= 65535);
     free_ports_ = std::make_unique<std::queue<int>>();
+    RAY_LOG(WARNING) << "Generating free ports from min_worker_port " << min_worker_port << " to max_worker_port " << max_worker_port;
     for (int port = min_worker_port; port <= max_worker_port; port++) {
       free_ports_->push(port);
     }
   }
   if (RayConfig::instance().kill_idle_workers_interval_ms() > 0) {
     periodical_runner_.RunFnPeriodically(
-        [this] { TryKillingIdleWorkers(); },
+        [this] {
+            TryKillingIdleWorkers();
+        },
         RayConfig::instance().kill_idle_workers_interval_ms(),
         "RayletWorkerPool.deadline_timer.kill_idle_workers");
   }
@@ -968,6 +980,8 @@ void WorkerPool::PushWorker(const std::shared_ptr<WorkerInterface> &worker) {
   // Since the worker is now idle, unset its assigned task ID.
   RAY_CHECK(worker->GetAssignedTaskId().IsNil())
       << "Idle workers cannot have an assigned task ID";
+
+  RAY_LOG(WARNING) << "PushWorker called on worker, job id " << worker->GetAssignedJobId();
   auto &state = GetStateForLanguage(worker->GetLanguage());
   bool found;
   bool used;
@@ -1150,7 +1164,7 @@ void WorkerPool::TryKillingIdleWorkers() {
 void WorkerPool::PopWorker(const TaskSpecification &task_spec,
                            const PopWorkerCallback &callback,
                            const std::string &allocated_instances_serialized_json) {
-  RAY_LOG(DEBUG) << "Pop worker for task " << task_spec.TaskId() << " task name "
+  RAY_LOG(WARNING) << "Pop worker for task " << task_spec.TaskId() << " task name "
                  << task_spec.FunctionDescriptor()->ToString();
   auto &state = GetStateForLanguage(task_spec.GetLanguage());
 
