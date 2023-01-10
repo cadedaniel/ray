@@ -29,4 +29,4 @@ actors, you can use :ref:`ray.util.queue.Queue <ray-queue-ref>`.
 
 .. literalinclude:: ../doc_code/actor-queue.py
 
-Ray's Queue API has similar API as Python's ``asyncio.Queue`` and ``queue.Queue``.
+Ray's Queue API has similar API as Python's ``asyncio.Queue`` and ``queue.Queue``. Note that [asyncio.Queue is not thread safe](https://docs.python.org/3/library/asyncio-queue.html#asyncio.Queue), consuming the same queue from multiple actors in parallell may yield duplicate records.
