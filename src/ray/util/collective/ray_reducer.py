@@ -35,9 +35,9 @@ class Reducer:
             for t in tensors[1:]:
                 sum_tensors = torch.add(sum_tensors, t)
 
-            self.results[global_order] = sum_tensors
+            result = sum_tensors / self.size
+            self.results[global_order] = result
             self.consumed_count[global_order] += 1
-            result = sum_tensors
         else:
             while self.consumed_count[global_order] == 0:
                 await asyncio.sleep(0.1)
