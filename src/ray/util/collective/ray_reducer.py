@@ -6,24 +6,26 @@ import asyncio
 
 @ray.remote
 class Reducer:
-    def __init__(self):
+    def __init__(self, reducer_clients):
         self.results = {}
         self.inputs = defaultdict(list)
         self.consumed_count = defaultdict(int)
+        self.size = len(reducer_clients)
+        self.clients = reducer_clients
         print(f"reducer created")
 
     async def ready(self):
         return True
 
-    async def reduce(self, tensor, global_order, num_expected, client_name, client_rank):
+    async def reduce(self, tensor, name, global_order):
         import torch
         self.inputs[global_order].append(tensor)
 
         # The zeroth rank will wait for all inputs, then sum, then store the result.
         # The non-zero ranks will wait for the zeroth rank to store the result.
         # The last rank to access the result will delete the results and inputs.
-        if client_rank == 0:
-            while len(self.inputs[global_order]) < num_expected:
+        if name == self.clients[0]:
+            while len(self.inputs[global_order]) < self.size:
                 await asyncio.sleep(0.1)
         
             tensors = self.inputs[global_order]
@@ -42,7 +44,7 @@ class Reducer:
             result = self.results[global_order]
             self.consumed_count[global_order] += 1
 
-            if self.consumed_count[global_order] == num_expected:
+            if self.consumed_count[global_order] == self.size:
                 del self.inputs[global_order]
                 del self.consumed_count[global_order]
                 del self.results[global_order]
@@ -88,6 +90,7 @@ class ReducerClient:
         # copy to GPU (gpu_buffer)
         
 
+        print(f'gpu_buffer now is {gpu_buffer}, address {gpu_buffer.storage().data_ptr()}')
         cpu_tensor = gpu_buffer.to('cpu')
 
         print(f'rank {self.rank} order {global_order} shape {cpu_tensor.size()}')
@@ -103,6 +106,7 @@ class ReducerClient:
         print(f'rank {self.rank} order {global_order} result {reduced}')
         # TODO nonblocking? otherwise this consumes the event loop
         gpu_buffer.copy_(reduced)
+        print(f'gpu_buffer now is {gpu_buffer}, address {gpu_buffer.storage().data_ptr()}')
 
 
 @ray.remote(num_gpus=1)
@@ -131,18 +135,24 @@ class Trainer:
 
             
 def set_up_ray_reduce(gpu_nodes_config):
-    print('creating reducer...')
-    reducer = Reducer.options(name="ray_reducer", lifetime="detached").remote()
-    ray.get(reducer.ready.remote())
-    print('creating reducer clients...')
     rank = 0
     reducer_clients = []
-    size = sum([num_gpus for _, num_gpus in gpu_nodes_config])
     for node_id, num_gpus in gpu_nodes_config:
-        reducer_clients += [ReducerClient.options(name=f"cli:{node_id}:{i}", lifetime="detached")\
-            .remote(f"cli:{node_id}:{i}", reducer, rank, size) for i in range(num_gpus)]
+        reducer_clients += [f"cli:{node_id}:{i}" for i in range(num_gpus)]
         rank += 1
-    ray.get([reducer_client.ready.remote() for reducer_client in reducer_clients])
+
+    print('creating reducer...')
+    reducer = Reducer.options(name="ray_reducer", lifetime="detached").remote(reducer_clients)
+#    ray.get(reducer.ready.remote())
+#    print('creating reducer clients...')
+#    rank = 0
+#    reducer_clients = []
+#    size = sum([num_gpus for _, num_gpus in gpu_nodes_config])
+#    for node_id, num_gpus in gpu_nodes_config:
+#        reducer_clients += [ReducerClient.options(name=f"cli:{node_id}:{i}", lifetime="detached")\
+#            .remote(f"cli:{node_id}:{i}", reducer, rank, size) for i in range(num_gpus)]
+#        rank += 1
+#    ray.get([reducer_client.ready.remote() for reducer_client in reducer_clients])
 
 
 def smoke_test():

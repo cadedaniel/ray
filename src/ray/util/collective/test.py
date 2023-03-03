@@ -26,10 +26,14 @@ class Actor:
         
     def run(self):
         import torch.distributed as dist
-        print(f"[worker] my task_id {ray.get_runtime_context().get_task_id()}")
-        tensor = torch.ones(5).cuda()
-        dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
-        print(tensor)
+        for batch in range(5):
+          print(f"batch {batch}")
+          print(f"[worker] my task_id {ray.get_runtime_context().get_task_id()}")
+          tensor = torch.ones(5).cuda()
+          print(f'gpu_buffer now is {tensor}, address {tensor.storage().data_ptr()}')
+          dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+          print(f'gpu_buffer now is {tensor}, address {tensor.storage().data_ptr()}')
+          print(tensor)
 
 ray.init(address="local")
 ray_reducer.set_up_ray_reduce([(ray.get_runtime_context().get_node_id(), 4)])

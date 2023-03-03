@@ -14,7 +14,7 @@ namespace {
 PyObject *ConvertToPythonTensor(at::Tensor &tensor) { return THPVariable_Wrap(tensor); }
 
 bool CallRayReduce(std::vector<at::Tensor> &tensors, const AllreduceOptions &opts) {
-    if (opts.reduceOp != ReduceOp::SUM) {
+    if (opts.reduceOp != ReduceOp::SUM || tensors.size() != 1) {
       return false;
     }
     py::gil_scoped_acquire acq{};
