@@ -34,7 +34,7 @@ class Actor:
         dist.all_reduce(tensor, op=dist.ReduceOp.AVG)
 
         start = time.time()
-        for batch in range(20):
+        for batch in range(10):
           print(f"batch {batch}")
           tensor = torch.rand(10 * 2 ** 20, dtype=torch.float64).cuda()
           dist.all_reduce(tensor, op=dist.ReduceOp.AVG)
