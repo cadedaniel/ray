@@ -87,6 +87,11 @@ class TrainActor:
         print('init tokenizer')
         tokenizer = BloomTokenizerFast.from_pretrained("bigscience/bloom-560m")
         
+        #if rank != 0:
+        #    # Cause hang
+        #    # With this uncommented, the zeroth rank begins training. It uses all GPUs. And it ooms.
+        #    torch.distributed.barrier()
+
         print('init model')
         model = BloomForCausalLM.from_pretrained(
             "bigscience/bloom-560m",
