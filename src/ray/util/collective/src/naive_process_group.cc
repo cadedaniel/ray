@@ -110,7 +110,7 @@ c10::intrusive_ptr<Work> NaiveProcessGroup::allreduce(std::vector<at::Tensor> &t
   }
 
   // future->markCompleted(c10::IValue(tensors));
-  return c10::make_intrusive<NaiveWork>(OpType::ALLGATHER, std::move(future));
+  return c10::make_intrusive<NaiveWork>(OpType::ALLREDUCE, std::move(future));
 }
 
 c10::intrusive_ptr<Work> NaiveProcessGroup::allreduce_coalesced(
