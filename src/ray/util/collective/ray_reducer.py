@@ -35,7 +35,7 @@ class Reducer:
             for t in tensors[1:]:
                 sum_tensors = torch.add(sum_tensors, t)
 
-            result = sum_tensors / self.size
+            result = sum_tensors 
             self.results[global_order] = result
             self.consumed_count[global_order] += 1
         else:

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
 import os
+import ray
+import ray_reducer
+
 os.environ['WANDB_DISABLED'] = 'true'
 os.environ['COMET_MODE'] = 'disabled'
 
@@ -19,9 +22,13 @@ if not os.path.isdir('/data'):
     print('moving cache to nvme')
     subprocess.run("mv ~/.cache /data/cache && ln -s /data/cache ~/.cache", shell=True)
 
+ray.init(address="auto")
+ray_reducer.set_up_ray_reduce([(ray.get_runtime_context().get_node_id(), 4)])
+
 def train_single_proc():
 
     import os
+
     rank = int(os.environ.get('RANK', -1))
     world_size = int(os.environ.get('WORLD_SIZE', -1))
 

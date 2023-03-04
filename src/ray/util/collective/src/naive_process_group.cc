@@ -1,5 +1,7 @@
 #include "naive_process_group.h"
 
+#include <exception>
+
 #include <pybind11/functional.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/eval.h>
@@ -29,7 +31,8 @@ bool CallRayReduce(std::vector<at::Tensor> &tensors, const AllreduceOptions &opt
 }
 
 bool CallRayReduceAsync(std::vector<at::Tensor> &tensors, const AllreduceOptions &opts, c10::intrusive_ptr<c10::ivalue::Future> future) {
-    if (opts.reduceOp != ReduceOp::AVG || tensors.size() != 1) {
+    LOG(ERROR) << "Rayreduce: " << opts.reduceOp << ":" << tensors.size();
+    if (opts.reduceOp != ReduceOp::SUM || tensors.size() != 1) {
       return false;
     }
     py::gil_scoped_acquire acq{};
@@ -100,10 +103,10 @@ c10::intrusive_ptr<Work> NaiveProcessGroup::_allgather_base(
 // Modify the implementation to conduct real communication asynchronously
 c10::intrusive_ptr<Work> NaiveProcessGroup::allreduce(std::vector<at::Tensor> &tensors,
                                                       const AllreduceOptions &opts) {
-
   auto future = c10::make_intrusive<c10::ivalue::Future>(
     c10::ListType::create(c10::TensorType::get()));
 
+  LOG(ERROR) << "Rayreduce is called ";
   if (!CallRayReduceAsync(tensors, opts, future)) {
     // if Ray Reduce doesn't support it, fallback to NCCL reduce.
     return c10::make_intrusive<NaiveWork>(
