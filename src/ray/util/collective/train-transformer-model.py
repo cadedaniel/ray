@@ -4,19 +4,24 @@ import os
 os.environ['WANDB_DISABLED'] = 'true'
 os.environ['COMET_MODE'] = 'disabled'
 
-#local_rank = os.environ.get('LOCAL_RANK', -1)
-#os.environ['CUDA_VISIBLE_DEVICES'] = str(local_rank)
+# If nvme cache not set up, install required dependencies and set up cache.
+if not os.path.isdir('/data'):
+    import subprocess
+    print('installing pip packages')
+    subprocess.run("pip install -U 'numpy<1.24.0' accelerate transformers 'dill<0.3.5' datasets", shell=True)
 
-#if local_rank == 0:
-#    # TODO this will have problems, other ranks don't wait
-#    # need barrier
-#    import subprocess
-#    subprocess.run("pip install -U 'numpy<1.24.0' accelerate transformers 'dill<0.3.5' datasets", shell=True)
+    print('removing pip packages')
+    subprocess.run("pip uninstall comet-ml")
+
+    print('mounting nvme')
+    subprocess.run("bash mount_nvme", shell=True)
+
+    print('moving cache to nvme')
+    subprocess.run("mv ~/.cache /data/cache && ln -s /data/cache ~/.cache", shell=True)
 
 def train_single_proc():
 
     import os
-    #print(os.environ)
     rank = int(os.environ.get('RANK', -1))
     world_size = int(os.environ.get('WORLD_SIZE', -1))
 
@@ -35,6 +40,10 @@ def train_single_proc():
     )
     torch.distributed.barrier()
     
+    if rank != 0:
+        # If not 0, wait here so there are no issues concurrently writing to cache.
+        torch.distributed.barrier()
+
     print('import transformers')
     from transformers import BloomTokenizerFast, BloomForCausalLM
     from transformers import Trainer, TrainingArguments
@@ -90,6 +99,9 @@ def train_single_proc():
         batch_size=1000,
         num_proc=os.cpu_count(),
     )
+
+    if rank == 0:
+        torch.distributed.barrier()
     
     print('creating trainer')
     training_args = TrainingArguments(
