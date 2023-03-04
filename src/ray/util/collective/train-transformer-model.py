@@ -14,7 +14,7 @@ if not os.path.isdir('/data'):
     subprocess.run("pip install -U 'numpy<1.24.0' accelerate transformers 'dill<0.3.5' datasets", shell=True)
 
     print('removing pip packages')
-    subprocess.run("pip uninstall comet-ml")
+    subprocess.run("pip uninstall comet-ml -y", shell=True)
 
     print('mounting nvme')
     subprocess.run("bash mount_nvme", shell=True)
