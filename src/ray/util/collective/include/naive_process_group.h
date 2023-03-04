@@ -32,6 +32,10 @@ class NaiveProcessGroup : public ProcessGroup {
 
   NaiveProcessGroup(const c10::intrusive_ptr<::c10d::Store> &store, int rank, int size);
 
+  const std::string getBackendName() const override {
+      return std::string("ray");
+  }
+
   c10::intrusive_ptr<Work> broadcast(
       std::vector<at::Tensor> &data,
       const BroadcastOptions &opts = BroadcastOptions()) override;
