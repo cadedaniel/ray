@@ -58,11 +58,12 @@ void CallRayFunction() {
 }
 }  // namespace
 
-bool NaiveProcessGroup::NaiveWork::isCompleted() { return true; }
+bool NaiveProcessGroup::NaiveWork::isCompleted() { return future_->completed(); }
 
-bool NaiveProcessGroup::NaiveWork::isSuccess() const { return true; }
+bool NaiveProcessGroup::NaiveWork::isSuccess() const { return future_->hasValue(); }
 
 bool NaiveProcessGroup::NaiveWork::wait(std::chrono::milliseconds /* unused */) {
+  future_->wait();
   return true;
 }
 
