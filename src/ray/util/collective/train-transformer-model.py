@@ -15,8 +15,25 @@ os.environ['COMET_MODE'] = 'disabled'
 
 def train_single_proc():
 
+    import os
+    #print(os.environ)
+    rank = int(os.environ.get('RANK', -1))
+    world_size = int(os.environ.get('WORLD_SIZE', -1))
+
     print('import torch')
     import torch
+
+    print('import ray_collectives')
+    import ray_collectives
+
+    print('init torch distributed backend')
+    print(torch.distributed.is_available())
+    torch.distributed.init_process_group(
+        'ray',
+        rank=rank,
+        world_size=world_size,
+    )
+    torch.distributed.barrier()
     
     print('import transformers')
     from transformers import BloomTokenizerFast, BloomForCausalLM
@@ -30,9 +47,10 @@ def train_single_proc():
         "bigscience/bloom-560m",
         #torch_dtype=torch.float16, -> Attempting to unscale FP16 gradients.
         #device_map="sequential",
-    )
+    ).to(f'cuda:{rank}')
     
     #model = model.to(torch.float16) -> Attempting to unscale FP16 gradients.
+    torch.distributed.barrier()
     
     print('load dataset')
     from datasets import load_dataset
