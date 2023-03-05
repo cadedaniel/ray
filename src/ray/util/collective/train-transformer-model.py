@@ -23,7 +23,7 @@ if not os.path.isdir('/data'):
     subprocess.run("mv ~/.cache /data/cache && ln -s /data/cache ~/.cache", shell=True)
 
 ray.init(address="auto")
-ray_reducer.set_up_ray_reduce([(ray.get_runtime_context().get_node_id(), 4)])
+reducer_actor_handle = ray_reducer.set_up_ray_reduce([(ray.get_runtime_context().get_node_id(), 4)])
 
 @ray.remote
 class TrainActor:
@@ -40,6 +40,7 @@ class TrainActor:
         print(f'init actor, rank {rank} world_size {world_size}')
         import os
         os.environ['RANK'] = str(rank)
+        os.environ['LOCAL_RANK'] = str(rank)
         os.environ['WORLD_SIZE'] = str(world_size)
         os.environ['MASTER_ADDR'] = '127.0.0.1'
         os.environ['MASTER_PORT'] = '29500'
@@ -58,7 +59,7 @@ class TrainActor:
         print('init torch distributed backend')
         print(torch.distributed.is_available())
         torch.distributed.init_process_group(
-            'nccl',
+            'ray',
             rank=rank,
             world_size=world_size,
         )

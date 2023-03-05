@@ -17,18 +17,19 @@ class Reducer:
     async def ready(self):
         return True
 
-    async def reduce(self, tensor, name, global_order):
+    async def reduce(self, tensor, name, sequence):
+        print(f'reduce on sequence {sequence}, from {name}')
         import torch
-        self.inputs[global_order].append(tensor)
+        self.inputs[sequence].append(tensor)
 
         # The zeroth rank will wait for all inputs, then sum, then store the result.
         # The non-zero ranks will wait for the zeroth rank to store the result.
         # The last rank to access the result will delete the results and inputs.
         if name == self.clients[0]:
-            while len(self.inputs[global_order]) < self.size:
+            while len(self.inputs[sequence]) < self.size:
                 await asyncio.sleep(0.1)
         
-            tensors = self.inputs[global_order]
+            tensors = self.inputs[sequence]
             
             sum_tensors = tensors[0]
             print('summing tensors: ', tensors)
@@ -36,19 +37,19 @@ class Reducer:
                 sum_tensors = torch.add(sum_tensors, t)
 
             result = sum_tensors 
-            self.results[global_order] = result
-            self.consumed_count[global_order] += 1
+            self.results[sequence] = result
+            self.consumed_count[sequence] += 1
         else:
-            while self.consumed_count[global_order] == 0:
+            while self.consumed_count[sequence] == 0:
                 await asyncio.sleep(0.1)
-            result = self.results[global_order]
-            self.consumed_count[global_order] += 1
+            result = self.results[sequence]
+            self.consumed_count[sequence] += 1
 
-            if self.consumed_count[global_order] == self.size:
-                del self.inputs[global_order]
-                del self.consumed_count[global_order]
-                del self.results[global_order]
-                print(f'released global_order {global_order}')
+            if self.consumed_count[sequence] == self.size:
+                del self.inputs[sequence]
+                del self.consumed_count[sequence]
+                del self.results[sequence]
+                print(f'released sequence {sequence}')
 
         # we have all of them.
         return result
@@ -82,7 +83,7 @@ class ReducerClient:
         return True
 
     # make into async actor.
-    async def allreduce(self, gpu_buffer, global_order):
+    async def allreduce(self, gpu_buffer, sequence):
         # assign some global order id
         # copy to CPU
         # copy to reducer
@@ -93,17 +94,17 @@ class ReducerClient:
         print(f'gpu_buffer now is {gpu_buffer}, address {gpu_buffer.storage().data_ptr()}')
         cpu_tensor = gpu_buffer.to('cpu')
 
-        print(f'rank {self.rank} order {global_order} shape {cpu_tensor.size()}')
+        print(f'rank {self.rank} order {sequence} shape {cpu_tensor.size()}')
 
         reduced = await self.reducer.reduce.remote(
             cpu_tensor,
-            global_order,
+            sequence,
             self.size,
             self.name,
             self.rank,
         )
         
-        print(f'rank {self.rank} order {global_order} result {reduced}')
+        print(f'rank {self.rank} order {sequence} result {reduced}')
         # TODO nonblocking? otherwise this consumes the event loop
         gpu_buffer.copy_(reduced)
         print(f'gpu_buffer now is {gpu_buffer}, address {gpu_buffer.storage().data_ptr()}')
@@ -133,6 +134,13 @@ class Trainer:
                 futures.append(self.reducer_client.allreduce.remote(t, counter.get_and_increment()))
             ray.get(futures)
 
+def kill_actor_if_exists(name):
+    try:
+        ray.kill(ray.get_actor(name))
+        print(f'killed previous {name}')
+    except ValueError as e:
+        if "Failed to look up actor with name" not in str(e):
+            raise
             
 def set_up_ray_reduce(gpu_nodes_config):
     rank = 0
@@ -143,6 +151,7 @@ def set_up_ray_reduce(gpu_nodes_config):
 
     print('creating reducer...')
     reducer = Reducer.options(name="ray_reducer", lifetime="detached").remote(reducer_clients)
+    return reducer
 #    ray.get(reducer.ready.remote())
 #    print('creating reducer clients...')
 #    rank = 0
