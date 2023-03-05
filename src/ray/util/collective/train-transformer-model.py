@@ -1,27 +1,20 @@
 #!/usr/bin/env python3
 
+"""
+Current status: having trouble getting the dependencies installed on all nodes in the cluster.
+when I compile ray_reducer locally (CPU node) I get failures because cuda runtime is not provided.
+
+I think next steps are to compile it on a GPU machine (my other workspace), copy to s3, then copy to cluster storage PYTHONPATH.
+
+Also, ~/workspace-project-cade-dev is not synced to all machines?
+"""
+
 import os
 import ray
-import ray_reducer
 import time
 
 os.environ['WANDB_DISABLED'] = 'true'
 os.environ['COMET_MODE'] = 'disabled'
-
-# If nvme cache not set up, install required dependencies and set up cache.
-if not os.path.isdir('/data'):
-    import subprocess
-    print('installing pip packages')
-    subprocess.run("pip install -U 'numpy<1.24.0' accelerate transformers 'dill<0.3.5' datasets", shell=True)
-
-    print('removing pip packages')
-    subprocess.run("pip uninstall comet-ml -y", shell=True)
-
-    print('mounting nvme')
-    subprocess.run("bash mount_nvme", shell=True)
-
-    print('moving cache to nvme')
-    subprocess.run("mv ~/.cache /data/cache && ln -s /data/cache ~/.cache", shell=True)
 
 from transformers import TrainerCallback
 class LoggerCallback(TrainerCallback):
@@ -41,14 +34,34 @@ class LoggerCallback(TrainerCallback):
         print(f"(rank {args.local_rank}) on_step_begin {self.step_index}, last step {delta:.02f} s")
         self.step_index += 1
 
-@ray.remote
+def prep_script():
+    # If nvme cache not set up, install required dependencies and set up cache.
+    if not os.path.isdir('/data'):
+        import subprocess
+        print('installing pip packages')
+        subprocess.run("pip install -U 'numpy<1.24.0' accelerate transformers 'dill<0.3.5' datasets", shell=True)
+    
+        print('removing pip packages')
+        subprocess.run("pip uninstall comet-ml -y", shell=True)
+    
+        print('mounting nvme')
+        #subprocess.run("bash ~/workspace-project-cade-dev/src/ray/util/collective/mount_nvme", shell=True)
+        #subprocess.run("bash /mnt/cluster_storage/cade-allreduce/collective/mount_nvme", shell=True)
+    
+        print('moving cache to nvme')
+        #subprocess.run("mkdir -p ~/.cache && mv ~/.cache /data/cache && ln -s /data/cache ~/.cache", shell=True)
+
+        print('installing ray reducer')
+        subprocess.run("cd /mnt/cluster_storage/cade-allreduce/collective/ && python setup.py install", shell=True)
+
+@ray.remote(num_gpus=1)
 class TrainActor:
 
-    def __init__(self, rank, world_size):
+    def __init__(self, rank, local_rank, world_size):
         print(f'init actor, rank {rank} world_size {world_size}')
         import os
         os.environ['RANK'] = str(rank)
-        os.environ['LOCAL_RANK'] = str(rank)
+        os.environ['LOCAL_RANK'] = str(local_rank)
         os.environ['WORLD_SIZE'] = str(world_size)
         os.environ['MASTER_ADDR'] = '127.0.0.1'
         os.environ['MASTER_PORT'] = '29500'
@@ -56,24 +69,27 @@ class TrainActor:
         os.environ['COMET_MODE'] = 'disabled'
         #os.environ['CUDA_VISIBLE_DEVICES'] = str(rank)
         del os.environ['CUDA_VISIBLE_DEVICES']
-
-        print('import torch')
-        import torch
-        torch.cuda.set_device(rank)
+        
+        #print('import torch')
+        #import torch
+        #torch.cuda.set_device(local_rank)
     
-        print('import ray_collectives')
-        import ray_collectives
+        #print('import ray_collectives')
+        #import ray_collectives
     
-        print('init torch distributed backend')
-        print(torch.distributed.is_available())
-        torch.distributed.init_process_group(
-            'ray',
-            rank=rank,
-            world_size=world_size,
-        )
-        #torch.distributed.barrier()
+        #print('init torch distributed backend')
+        #print(torch.distributed.is_available())
+        #torch.distributed.init_process_group(
+        #    'ray',
+        #    rank=rank,
+        #    world_size=world_size,
+        #)
+        ##torch.distributed.barrier()
 
         print(f'rank {rank} init done')
+
+    def run_prep_script(self):
+        prep_script()
 
     def train_single_proc(self):
         import os
@@ -176,11 +192,15 @@ class TrainActor:
 
 ray.init(address="auto")
 
-world_size = 2
-reducer_actor_handle = ray_reducer.set_up_ray_reduce([(ray.get_runtime_context().get_node_id(), world_size)])
-train_actors = [TrainActor.remote(rank, world_size) for rank in range(world_size)]
+world_size = 8
+num_gpus_per_node = 1
+#import ray_reducer
+#reducer_actor_handle = ray_reducer.set_up_ray_reduce([(ray.get_runtime_context().get_node_id(), world_size)])
+train_actors = [TrainActor.remote(rank, rank % num_gpus_per_node, world_size) for rank in range(world_size)]
 
-ray.get([t.train_single_proc.remote() for t in train_actors])
+ray.get([t.run_prep_script.remote() for t in train_actors])
+
+#ray.get([t.train_single_proc.remote() for t in train_actors])
 #from accelerate import notebook_launcher
 
 #notebook_launcher(train_single_proc, args=(), num_processes=4)
