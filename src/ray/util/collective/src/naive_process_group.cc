@@ -103,6 +103,8 @@ c10::intrusive_ptr<Work> NaiveProcessGroup::_allgather_base(
 // Modify the implementation to conduct real communication asynchronously
 c10::intrusive_ptr<Work> NaiveProcessGroup::allreduce(std::vector<at::Tensor> &tensors,
                                                       const AllreduceOptions &opts) {
+  // TODO(cade): this needs to store the tensors and the future on the heap when we are using ray.
+  // We return an intrusive_ptr, the intrusive_ptr needs to be on the heap.
   auto future = c10::make_intrusive<c10::ivalue::Future>(
     c10::ListType::create(c10::TensorType::get()));
 

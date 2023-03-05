@@ -23,10 +23,43 @@ class Ctx:
         self.last_event_time = t
         return last_event_time
 
+class CopyManager:
+    def __init__(self):
+        self.self_lock = threading.Lock()
+        self.loop = None
+        self.thread = threading.Thread(target=lambda: asyncio.run(self.copy_manager_loop()))
+        self.thread.start()
+        self.wait_until_ready()
+
+    def wait_until_ready(self):
+        while True:
+            with self.self_lock:
+                if self.loop != None:
+                    break
+            print('CopyManager: waiting for loop to be set')
+            time.sleep(0.1)
+        print('CopyManager is ready')
+
+    async def copy_manager_loop(self):
+        loop = asyncio.get_running_loop()
+        with self.self_lock:
+            self.loop = loop
+        
+        print(f'copy_manager_loop starting, thread={threading.get_native_id()} pid {os.getpid()}')
+        while True:
+            await asyncio.sleep(10)
+
+    def enqueue(self, tensors, callback):
+        asyncio.run_coroutine_threadsafe(
+            all_reduce_tensors_async_helper(tensors, callback),
+            self.loop,
+        )
+
+copy_manager = CopyManager()
+
 def all_reduce_tensors_async(tensors, callback):
   print(f'all_reduce_tensors_async, called from thread {threading.get_native_id()} pid {os.getpid()}')
-  # TODO need to lift this into it's own thread
-  asyncio.run(all_reduce_tensors_async_helper(tensors, callback))
+  copy_manager.enqueue(tensors, callback)
 
 async def all_reduce_tensors_async_helper(tensors, callback):
   global async_reduce_sequence
@@ -42,6 +75,7 @@ async def all_reduce_tensors_async_helper(tensors, callback):
   if stage_tracker.should_print(async_reduce_sequence) and ctx.rank == 0:
     stage_tracker.print('client')
 
+  print('invoking callback')
   callback()
 
 
@@ -53,18 +87,17 @@ async def all_reduce_impl_async(gpu_buffer, sequence, ctx):
 
   cpu_tensor = gpu_buffer.to('cpu')
   log_with_time(f"copied to cpu", ctx)
-  reduced = await reducer.reduce.remote(
-
-  #print(f"call reduce (skipping completion)")
-  #reduced = reducer.reduce.remote(
-      cpu_tensor,
-      client_name,
-      sequence,
-      ctx.rank,
-  )
+  await asyncio.sleep(0.250)
+  #reduced = await reducer.reduce.remote(
+  #    cpu_tensor,
+  #    client_name,
+  #    sequence,
+  #    ctx.rank,
+  #)
   log_with_time(f"called reduce", ctx)
 
-  gpu_buffer.copy_(reduced)
+  #gpu_buffer.copy_(reduced)
+  await asyncio.sleep(0.05)
   log_with_time(f"copied to gpu", ctx)
 
 class StageTracker:

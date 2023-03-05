@@ -1,25 +1,42 @@
 #!/usr/bin/env python3
 
-import ray
+import threading
+import asyncio
+import time
 
-ray.init()
+#asyncio.run_coroutine_threadsafe
+class CopyManager:
+    def __init__(self):
+        self.self_lock = threading.Lock()
+        self.loop = None
+        self.thread = threading.Thread(target=lambda: asyncio.run(self.copy_manager_loop()))
+        self.thread.start()
 
-def alive(nodes):
-    for n in nodes:
-        if n['Alive']:
-            yield n
+    async def copy_manager_loop(self):
+        loop = asyncio.get_running_loop()
+        with self.self_lock:
+            self.loop = loop
 
-def has_gpu(nodes):
-    for n in nodes:
-        if 'GPU' in n['Resources']:
-            yield n
+        while True:
+            print('Hello, world!')
+            await asyncio.sleep(1)
 
-def no_has_gpu(nodes):
-    for n in nodes:
-        if 'GPU' not in n['Resources']:
-            yield n
+    def enqueue(self, tensors, callback):
+        asyncio.run_coroutine_threadsafe(coro_func(), self.loop)
+        #asyncio.run_coroutine_threadsafe(all_reduce_tensors_async_helper(tensors, callback))
+        #asyncio.run(all_reduce_tensors_async_helper(tensors, callback))
 
-nodes = list(alive(ray.nodes()))
-gpu_nodes = list(has_gpu(nodes))
-no_gpu_nodes = list(no_has_gpu(nodes))
+copy_manager = CopyManager()
 
+time.sleep(1)
+print('enqueueing coroutine from main thread', threading.get_native_id())
+
+async def coro_func():
+    print('coro func start', threading.get_native_id())
+    await asyncio.sleep(1)
+    print('coro func done')
+
+#asyncio.run_coroutine_threadsafe(coro_func(), loop=copy_manager.loop)
+copy_manager.enqueue(None, None)
+
+copy_manager.thread.join()
