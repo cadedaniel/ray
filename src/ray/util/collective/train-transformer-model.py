@@ -14,9 +14,10 @@ class LoggerCallback(TrainerCallback):
         super().__init__()
         self.last_step_begin_time = time.time()
         self.step_index = 0
+        self.rank = int(os.environ['RANK'])
 
     def on_step_begin(self, args, state, control, **kwargs):
-        if args.local_rank:
+        if self.rank:
             return
 
         step_begin_time = time.time()
