@@ -43,53 +43,69 @@ def prep_script():
     
         print('removing pip packages')
         subprocess.run("pip uninstall comet-ml -y", shell=True)
-    
+
         print('mounting nvme')
-        #subprocess.run("bash ~/workspace-project-cade-dev/src/ray/util/collective/mount_nvme", shell=True)
-        #subprocess.run("bash /mnt/cluster_storage/cade-allreduce/collective/mount_nvme", shell=True)
+        subprocess.run("bash mount_nvme", shell=True)
     
         print('moving cache to nvme')
-        #subprocess.run("mkdir -p ~/.cache && mv ~/.cache /data/cache && ln -s /data/cache ~/.cache", shell=True)
+        subprocess.run("mkdir -p ~/.cache && mv ~/.cache /data/cache && ln -s /data/cache ~/.cache", shell=True)
 
-        print('installing ray reducer')
-        subprocess.run("cd /mnt/cluster_storage/cade-allreduce/collective/ && python setup.py install", shell=True)
+        print('installing ray_collective')
+        subprocess.run("python setup.py install", shell=True)
 
 @ray.remote(num_gpus=1)
 class TrainActor:
 
     def __init__(self, rank, local_rank, world_size):
         print(f'init actor, rank {rank} world_size {world_size}')
+
+        self.rank = rank
+        self.local_rank = local_rank
+        self.world_size = world_size
+
         import os
         os.environ['RANK'] = str(rank)
         os.environ['LOCAL_RANK'] = str(local_rank)
         os.environ['WORLD_SIZE'] = str(world_size)
-        os.environ['MASTER_ADDR'] = '127.0.0.1'
-        os.environ['MASTER_PORT'] = '29500'
         os.environ['WANDB_DISABLED'] = 'true'
         os.environ['COMET_MODE'] = 'disabled'
         #os.environ['CUDA_VISIBLE_DEVICES'] = str(rank)
         del os.environ['CUDA_VISIBLE_DEVICES']
-        
-        #print('import torch')
-        #import torch
-        #torch.cuda.set_device(local_rank)
-    
-        #print('import ray_collectives')
-        #import ray_collectives
-    
-        #print('init torch distributed backend')
-        #print(torch.distributed.is_available())
-        #torch.distributed.init_process_group(
-        #    'ray',
-        #    rank=rank,
-        #    world_size=world_size,
-        #)
-        ##torch.distributed.barrier()
 
         print(f'rank {rank} init done')
 
     def run_prep_script(self):
         prep_script()
+
+    def get_ip(self):
+        import socket
+        return socket.gethostname()
+
+    def setup_dist_group(self, master_addr):
+        print(f'setup_dist_group, master_addr={master_addr}')
+        os.environ['MASTER_ADDR'] = master_addr
+        os.environ['MASTER_PORT'] = '29500'
+
+        print('import torch')
+        import torch
+        torch.cuda.set_device(self.local_rank)
+    
+        print('import ray_collectives')
+        import ray_collectives
+    
+        print('init torch distributed backend')
+        print(torch.distributed.is_available())
+
+        torch.distributed.init_process_group(
+            #'ray',
+            'nccl',
+            rank=self.rank,
+            world_size=self.world_size,
+        )
+
+        print('barrier')
+        torch.distributed.barrier()
+        print('setup_dist_group done')
 
     def train_single_proc(self):
         import os
@@ -98,7 +114,6 @@ class TrainActor:
         world_size = int(os.environ.get('WORLD_SIZE', -1))
     
         import torch
-        torch.cuda.set_device(rank)
         torch.distributed.barrier()
 
         if rank != 0:
@@ -198,9 +213,12 @@ num_gpus_per_node = 1
 #reducer_actor_handle = ray_reducer.set_up_ray_reduce([(ray.get_runtime_context().get_node_id(), world_size)])
 train_actors = [TrainActor.remote(rank, rank % num_gpus_per_node, world_size) for rank in range(world_size)]
 
-ray.get([t.run_prep_script.remote() for t in train_actors])
+rank_zero_ip = ray.get(train_actors[0].get_ip.remote())
 
-#ray.get([t.train_single_proc.remote() for t in train_actors])
+ray.get([t.run_prep_script.remote() for t in train_actors])
+ray.get([t.setup_dist_group.remote(rank_zero_ip) for t in train_actors])
+
+ray.get([t.train_single_proc.remote() for t in train_actors])
 #from accelerate import notebook_launcher
 
 #notebook_launcher(train_single_proc, args=(), num_processes=4)
