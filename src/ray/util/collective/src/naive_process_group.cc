@@ -42,7 +42,9 @@ bool CallRayReduceAsync(std::vector<at::Tensor> &tensors, const AllreduceOptions
     for (auto& t: tensors) {
       tensor_vectors.push_back(py::reinterpret_borrow<py::object>(ConvertToPythonTensor(t)));
     }
-    python_function(py::cast(tensor_vectors), py::cpp_function([&tensors, future](){ 
+
+    // Intentionally copy the tensors vector.
+    python_function(py::cast(tensor_vectors), py::cpp_function([tensors, future](){ 
           future->markCompleted(c10::IValue(tensors));
       }));
     return true;
@@ -103,8 +105,6 @@ c10::intrusive_ptr<Work> NaiveProcessGroup::_allgather_base(
 // Modify the implementation to conduct real communication asynchronously
 c10::intrusive_ptr<Work> NaiveProcessGroup::allreduce(std::vector<at::Tensor> &tensors,
                                                       const AllreduceOptions &opts) {
-  // TODO(cade): this needs to store the tensors and the future on the heap when we are using ray.
-  // We return an intrusive_ptr, the intrusive_ptr needs to be on the heap.
   auto future = c10::make_intrusive<c10::ivalue::Future>(
     c10::ListType::create(c10::TensorType::get()));
 
