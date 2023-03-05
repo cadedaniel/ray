@@ -3,6 +3,8 @@
 import ray
 from collections import defaultdict
 import asyncio
+import time
+from ray_reduce import Ctx, log_with_time, stage_tracker, stage_tracker_print_period
 
 @ray.remote
 class Reducer:
@@ -17,8 +19,14 @@ class Reducer:
     async def ready(self):
         return True
 
-    async def reduce(self, tensor, name, sequence):
-        print(f'reduce on sequence {sequence}, from {name}')
+    async def reduce(self, tensor, name, sequence, src_rank):
+        
+        if stage_tracker.should_print(sequence) and src_rank == 0:
+            stage_tracker.print('reducer')
+
+        ctx = stage_tracker.create_ctx(sequence, rank=src_rank)
+        log_with_time('reduce entered', ctx)
+
         import torch
         self.inputs[sequence].append(tensor)
         poll_period_s = 0.01
@@ -29,13 +37,15 @@ class Reducer:
         if name == self.clients[0]:
             while len(self.inputs[sequence]) < self.size:
                 await asyncio.sleep(poll_period_s)
+            log_with_time('done waiting for inputs', ctx)
         
             tensors = self.inputs[sequence]
             
             sum_tensors = tensors[0]
-            print('summing tensors: ', tensors)
+            #print('summing tensors: ', tensors)
             for t in tensors[1:]:
                 sum_tensors = torch.add(sum_tensors, t)
+            log_with_time('tensor reduction complete', ctx)
 
             result = sum_tensors 
             self.results[sequence] = result
@@ -43,6 +53,8 @@ class Reducer:
         else:
             while self.consumed_count[sequence] == 0:
                 await asyncio.sleep(poll_period_s)
+            log_with_time('done waiting for reduction of sequence', ctx)
+
             result = self.results[sequence]
             self.consumed_count[sequence] += 1
 

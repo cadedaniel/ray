@@ -45,14 +45,6 @@ class LoggerCallback(TrainerCallback):
 class TrainActor:
 
     def __init__(self, rank, world_size):
-        """
-        I don't think I am configuring things correctly. Maybe I look at ray train source, or use a lower-level
-        API than `train`.
-
-        As-is, I get OOMs. All four GPUs have memory on them (instead of the expected 2).
-
-        If I set CUDA_VISIBLE_DEVICES, I get peer access NCCL errors.
-        """
         print(f'init actor, rank {rank} world_size {world_size}')
         import os
         os.environ['RANK'] = str(rank)
@@ -104,11 +96,6 @@ class TrainActor:
         
         print('init tokenizer')
         tokenizer = BloomTokenizerFast.from_pretrained("bigscience/bloom-560m")
-        
-        #if rank != 0:
-        #    # Cause hang
-        #    # With this uncommented, the zeroth rank begins training. It uses all GPUs. And it ooms.
-        #    torch.distributed.barrier()
 
         print('init model')
         model = BloomForCausalLM.from_pretrained(
