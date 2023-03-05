@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+
+import ray
+
+ray.init()
+
+def alive(nodes):
+    for n in nodes:
+        if n['Alive']:
+            yield n
+
+def has_gpu(nodes):
+    for n in nodes:
+        if 'GPU' in n['Resources']:
+            yield n
+
+def no_has_gpu(nodes):
+    for n in nodes:
+        if 'GPU' not in n['Resources']:
+            yield n
+
+nodes = list(alive(ray.nodes()))
+gpu_nodes = list(has_gpu(nodes))
+no_gpu_nodes = list(no_has_gpu(nodes))
+

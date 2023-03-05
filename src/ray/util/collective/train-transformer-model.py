@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
 
-"""
-Current status: having trouble getting the dependencies installed on all nodes in the cluster.
-when I compile ray_reducer locally (CPU node) I get failures because cuda runtime is not provided.
-
-I think next steps are to compile it on a GPU machine (my other workspace), copy to s3, then copy to cluster storage PYTHONPATH.
-
-Also, ~/workspace-project-cade-dev is not synced to all machines?
-"""
-
 import os
 import ray
 import time
@@ -56,12 +47,17 @@ def prep_script():
 @ray.remote(num_gpus=1)
 class TrainActor:
 
-    def __init__(self, rank, local_rank, world_size):
-        print(f'init actor, rank {rank} world_size {world_size}')
+    def __init__(self, rank, local_rank, world_size, backend, num_gpus_per_node):
+        print(f'init actor, rank {rank} world_size {world_size} backend {backend} num_gpus_per_node {num_gpus_per_node}')
 
         self.rank = rank
         self.local_rank = local_rank
         self.world_size = world_size
+        self.num_gpus_per_node = num_gpus_per_node
+        self.backend = backend
+
+        # only set in rank0
+        self.reducer_actor_handle = None
 
         import os
         os.environ['RANK'] = str(rank)
@@ -83,6 +79,11 @@ class TrainActor:
 
     def setup_dist_group(self, master_addr):
         print(f'setup_dist_group, master_addr={master_addr}')
+
+        import subprocess
+        #subprocess.run("ps aux | grep TrainActor", shell=True)
+        #subprocess.run("ps aux | grep train_single_proc | awk '{print $2}' | xargs kill -9", shell=True)
+
         os.environ['MASTER_ADDR'] = master_addr
         os.environ['MASTER_PORT'] = '29500'
 
@@ -97,8 +98,7 @@ class TrainActor:
         print(torch.distributed.is_available())
 
         torch.distributed.init_process_group(
-            #'ray',
-            'nccl',
+            self.backend,
             rank=self.rank,
             world_size=self.world_size,
         )
@@ -107,6 +107,49 @@ class TrainActor:
         torch.distributed.barrier()
         print('setup_dist_group done')
 
+    def set_up_ray_reduce(self):
+        if self.backend != 'ray':
+            print(f'Skipping set_up_ray_reduce because backend is {self.backend}')
+            return
+        
+        if self.rank != 0:
+            print(f'Skipping set_up_ray_reduce because rank {self.rank} is not zero')
+            return
+        
+        print('creating ray reducer actor')
+        import ray_reducer
+        
+        def alive(nodes):
+            for n in nodes:
+                if n['Alive']:
+                    yield n
+        
+        def has_gpu(nodes):
+            for n in nodes:
+                if 'GPU' in n['Resources']:
+                    yield n
+        
+        def no_has_gpu(nodes):
+            for n in nodes:
+                if 'GPU' not in n['Resources']:
+                    yield n
+
+        def node_ids(nodes):
+            for n in nodes:
+                yield n['NodeID']
+        
+        nodes = list(alive(ray.nodes()))
+        gpu_nodes = list(has_gpu(nodes))
+        no_gpu_nodes = list(no_has_gpu(nodes))
+
+        assert len(gpu_nodes) == self.world_size
+        assert len(no_gpu_nodes) == 1
+
+        self.reducer_actor_handle = ray_reducer.set_up_ray_reduce(
+            [(node_id, self.num_gpus_per_node) for node_id in node_ids(gpu_nodes)],
+            no_gpu_nodes[0]['NodeID'],
+        )
+
     def train_single_proc(self):
         import os
     
@@ -114,11 +157,13 @@ class TrainActor:
         world_size = int(os.environ.get('WORLD_SIZE', -1))
     
         import torch
+        print('torch imported, barrier')
         torch.distributed.barrier()
 
-        if rank != 0:
-            # If not 0, wait here so there are no issues concurrently writing to cache.
-            torch.distributed.barrier()
+        #if rank != 0:
+        #    # If not 0, wait here so there are no issues concurrently writing to cache.
+        #    # (Uncomment this for single node multi gpu)
+        #    torch.distributed.barrier()
     
         print('import transformers')
         from transformers import BloomTokenizerFast, BloomForCausalLM
@@ -131,12 +176,7 @@ class TrainActor:
         print('init model')
         model = BloomForCausalLM.from_pretrained(
             "bigscience/bloom-560m",
-            #torch_dtype=torch.float16, -> Attempting to unscale FP16 gradients.
-            #device_map="sequential",
-        ).to(f'cuda:{rank}')
-        
-        #model = model.to(torch.float16) -> Attempting to unscale FP16 gradients.
-        torch.distributed.barrier()
+        ).to(f'cuda:{self.local_rank}')
         
         print('load dataset')
         from datasets import load_dataset
@@ -177,8 +217,8 @@ class TrainActor:
             num_proc=os.cpu_count(),
         )
     
-        if rank == 0:
-            torch.distributed.barrier()
+        #if rank == 0:
+        #    torch.distributed.barrier()
         
         print('creating trainer')
         training_args = TrainingArguments(
@@ -207,18 +247,24 @@ class TrainActor:
 
 ray.init(address="auto")
 
+backend = 'ray'
+
 world_size = 8
 num_gpus_per_node = 1
-#import ray_reducer
-#reducer_actor_handle = ray_reducer.set_up_ray_reduce([(ray.get_runtime_context().get_node_id(), world_size)])
-train_actors = [TrainActor.remote(rank, rank % num_gpus_per_node, world_size) for rank in range(world_size)]
+train_actors = [
+    TrainActor.remote(
+        rank=rank,
+        local_rank=rank % num_gpus_per_node,
+        world_size=world_size,
+        backend=backend,
+        num_gpus_per_node=num_gpus_per_node,
+    ) for rank in range(world_size)
+]
 
 rank_zero_ip = ray.get(train_actors[0].get_ip.remote())
 
 ray.get([t.run_prep_script.remote() for t in train_actors])
+ray.get(train_actors[0].set_up_ray_reduce.remote())
 ray.get([t.setup_dist_group.remote(rank_zero_ip) for t in train_actors])
 
 ray.get([t.train_single_proc.remote() for t in train_actors])
-#from accelerate import notebook_launcher
-
-#notebook_launcher(train_single_proc, args=(), num_processes=4)

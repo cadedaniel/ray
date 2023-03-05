@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+#echo 'ps aux | grep train_single | awk "{print $2}" | xargs echo' | ./run_com^Cnd_on_nodes  --num-nodes 9
+
+./run_command_on_nodes --num-nodes 9 << EOF
+ps aux | grep '[t]rain_single'
+ps aux | grep '[t]rain_single' | awk '{print \$2}' | xargs kill -9
+EOF

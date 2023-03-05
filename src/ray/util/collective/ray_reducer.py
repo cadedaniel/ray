@@ -15,11 +15,12 @@ class Reducer:
         self.size = len(reducer_clients)
         self.clients = reducer_clients
         print(f"reducer created, world_size {len(reducer_clients)}")
+        print(f'reducer clients', self.clients)
 
     async def ready(self):
         return True
 
-    async def reduce(self, tensor, name, sequence, src_rank):
+    async def reduce(self, tensor, client_name, sequence, src_rank):
         
         if stage_tracker.should_print(sequence) and src_rank == 0:
             stage_tracker.print('reducer')
@@ -31,10 +32,12 @@ class Reducer:
         self.inputs[sequence].append(tensor)
         poll_period_s = 0.01
 
+        assert client_name in self.clients
+
         # The zeroth rank will wait for all inputs, then sum, then store the result.
         # The non-zero ranks will wait for the zeroth rank to store the result.
         # The last rank to access the result will delete the results and inputs.
-        if name == self.clients[0]:
+        if client_name == self.clients[0]:
             while len(self.inputs[sequence]) < self.size:
                 await asyncio.sleep(poll_period_s)
             log_with_time('done waiting for inputs', ctx)
@@ -154,28 +157,25 @@ def kill_actor_if_exists(name):
     except ValueError as e:
         if "Failed to look up actor with name" not in str(e):
             raise
-            
-def set_up_ray_reduce(gpu_nodes_config):
-    rank = 0
+
+def schedule_on_node(node_id, soft=False):
+    return ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+        node_id=node_id,
+        soft=soft,
+    )
+
+def set_up_ray_reduce(client_node_ids, ray_reducer_node_id):
     reducer_clients = []
-    for node_id, num_gpus in gpu_nodes_config:
+    for node_id, num_gpus in client_node_ids:
         reducer_clients += [f"cli:{node_id}:{i}" for i in range(num_gpus)]
-        rank += 1
 
-    print('creating reducer...')
-    reducer = Reducer.options(name="ray_reducer").remote(reducer_clients)
+    print(f'creating reducer on {ray_reducer_node_id} with {len(client_node_ids)} clients')
+    reducer = Reducer.options(
+        name="ray_reducer",
+        scheduling_strategy=schedule_on_node(ray_reducer_node_id),
+    ).remote(reducer_clients)
+    print('reducer created')
     return reducer
-#    ray.get(reducer.ready.remote())
-#    print('creating reducer clients...')
-#    rank = 0
-#    reducer_clients = []
-#    size = sum([num_gpus for _, num_gpus in gpu_nodes_config])
-#    for node_id, num_gpus in gpu_nodes_config:
-#        reducer_clients += [ReducerClient.options(name=f"cli:{node_id}:{i}", lifetime="detached")\
-#            .remote(f"cli:{node_id}:{i}", reducer, rank, size) for i in range(num_gpus)]
-#        rank += 1
-#    ray.get([reducer_client.ready.remote() for reducer_client in reducer_clients])
-
 
 def smoke_test():
     print('creating actors')
