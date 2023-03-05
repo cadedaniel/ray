@@ -3,3 +3,4 @@ mlruns
 wandb
 bloom560m*
 dist
+log

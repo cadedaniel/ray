@@ -3,6 +3,7 @@
 import os
 import ray
 import ray_reducer
+import time
 
 os.environ['WANDB_DISABLED'] = 'true'
 os.environ['COMET_MODE'] = 'disabled'
@@ -22,8 +23,23 @@ if not os.path.isdir('/data'):
     print('moving cache to nvme')
     subprocess.run("mv ~/.cache /data/cache && ln -s /data/cache ~/.cache", shell=True)
 
-ray.init(address="auto")
-reducer_actor_handle = ray_reducer.set_up_ray_reduce([(ray.get_runtime_context().get_node_id(), 4)])
+from transformers import TrainerCallback
+class LoggerCallback(TrainerCallback):
+
+    def __init__(self):
+        super().__init__()
+        self.last_step_begin_time = time.time()
+        self.step_index = 0
+
+    def on_step_begin(self, args, state, control, **kwargs):
+        if args.local_rank:
+            return
+
+        step_begin_time = time.time()
+        delta = step_begin_time - self.last_step_begin_time
+        self.last_step_begin_time = step_begin_time
+        print(f"(rank {args.local_rank}) on_step_begin {self.step_index}, last step {delta:.02f} s")
+        self.step_index += 1
 
 @ray.remote
 class TrainActor:
@@ -84,6 +100,7 @@ class TrainActor:
         print('import transformers')
         from transformers import BloomTokenizerFast, BloomForCausalLM
         from transformers import Trainer, TrainingArguments
+        import transformers
         
         print('init tokenizer')
         tokenizer = BloomTokenizerFast.from_pretrained("bigscience/bloom-560m")
@@ -166,11 +183,14 @@ class TrainActor:
             args=training_args,
             train_dataset=lm_datasets["train"],
             eval_dataset=lm_datasets["validation"],
+            callbacks=[LoggerCallback],
         )
-        
         trainer.train()
 
+ray.init(address="auto")
+
 world_size = 2
+reducer_actor_handle = ray_reducer.set_up_ray_reduce([(ray.get_runtime_context().get_node_id(), world_size)])
 train_actors = [TrainActor.remote(rank, world_size) for rank in range(world_size)]
 
 ray.get([t.train_single_proc.remote() for t in train_actors])

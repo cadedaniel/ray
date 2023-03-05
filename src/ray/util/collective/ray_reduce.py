@@ -17,6 +17,7 @@ def all_reduce_tensors(tensors):
 
 def all_reduce_tensors_async(tensors, callback):
   print(f'all_reduce_tensors_async')
+  # TODO need to lift this into it's own thread
   asyncio.run(all_reduce_tensors_async_helper(tensors, callback))
 
 async def all_reduce_tensors_async_helper(tensors, callback):
@@ -49,16 +50,16 @@ async def all_reduce_impl_async(gpu_buffer, sequence):
   client_name = f"cli:{ray.get_runtime_context().get_node_id()}:{gpu_buffer.get_device()}" 
   print(f"copy to cpu")
   cpu_tensor = gpu_buffer.to('cpu')
-  #print(f"call reduce")
-  #reduced = await reducer.reduce.remote(
+  print(f"call reduce")
+  reduced = await reducer.reduce.remote(
 
-  print(f"call reduce (skipping completion)")
-  reduced = reducer.reduce.remote(
+  #print(f"call reduce (skipping completion)")
+  #reduced = reducer.reduce.remote(
       cpu_tensor,
       client_name,
       sequence,
   )
 
-  #print(f"copy to gpu")
-  #gpu_buffer.copy_(reduced)
+  print(f"copy to gpu")
+  gpu_buffer.copy_(reduced)
   print(f"done")

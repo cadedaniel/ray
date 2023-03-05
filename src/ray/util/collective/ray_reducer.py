@@ -12,7 +12,7 @@ class Reducer:
         self.consumed_count = defaultdict(int)
         self.size = len(reducer_clients)
         self.clients = reducer_clients
-        print(f"reducer created")
+        print(f"reducer created, world_size {len(reducer_clients)}")
 
     async def ready(self):
         return True
@@ -21,13 +21,14 @@ class Reducer:
         print(f'reduce on sequence {sequence}, from {name}')
         import torch
         self.inputs[sequence].append(tensor)
+        poll_period_s = 0.01
 
         # The zeroth rank will wait for all inputs, then sum, then store the result.
         # The non-zero ranks will wait for the zeroth rank to store the result.
         # The last rank to access the result will delete the results and inputs.
         if name == self.clients[0]:
             while len(self.inputs[sequence]) < self.size:
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(poll_period_s)
         
             tensors = self.inputs[sequence]
             
@@ -41,7 +42,7 @@ class Reducer:
             self.consumed_count[sequence] += 1
         else:
             while self.consumed_count[sequence] == 0:
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(poll_period_s)
             result = self.results[sequence]
             self.consumed_count[sequence] += 1
 
@@ -150,7 +151,7 @@ def set_up_ray_reduce(gpu_nodes_config):
         rank += 1
 
     print('creating reducer...')
-    reducer = Reducer.options(name="ray_reducer", lifetime="detached").remote(reducer_clients)
+    reducer = Reducer.options(name="ray_reducer").remote(reducer_clients)
     return reducer
 #    ray.get(reducer.ready.remote())
 #    print('creating reducer clients...')
