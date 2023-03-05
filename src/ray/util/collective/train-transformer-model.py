@@ -41,8 +41,8 @@ def prep_script():
         print('moving cache to nvme')
         subprocess.run("mkdir -p ~/.cache && mv ~/.cache /data/cache && ln -s /data/cache ~/.cache", shell=True)
 
-    print('installing ray_collective')
-    subprocess.run("python setup.py install", shell=True)
+        print('installing ray_collective')
+        subprocess.run("python setup.py install", shell=True)
 
 @ray.remote(num_gpus=1)
 class TrainActor:

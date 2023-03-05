@@ -8,7 +8,6 @@ import threading
 import os
 
 reduce_sequence = 0
-async_reduce_sequence = 0
 
 class Ctx:
     def __init__(self, sequence, rank, stage_tracker):
@@ -31,6 +30,8 @@ class CopyManager:
         self.thread.start()
         self.wait_until_ready()
 
+        self.reduce_sequence = 0
+
     def wait_until_ready(self):
         while True:
             with self.self_lock:
@@ -49,9 +50,14 @@ class CopyManager:
         while True:
             await asyncio.sleep(10)
 
+    def get_and_increment_sequence(self):
+        rval = self.reduce_sequence
+        self.reduce_sequence += 1
+        return rval
+
     def enqueue(self, tensors, callback):
         asyncio.run_coroutine_threadsafe(
-            all_reduce_tensors_async_helper(tensors, callback),
+            all_reduce_tensors_async_helper(tensors, callback, copy_manager),
             self.loop,
         )
 
@@ -61,18 +67,17 @@ def all_reduce_tensors_async(tensors, callback):
   print(f'all_reduce_tensors_async, called from thread {threading.get_native_id()} pid {os.getpid()}')
   copy_manager.enqueue(tensors, callback)
 
-async def all_reduce_tensors_async_helper(tensors, callback):
-  global async_reduce_sequence
+async def all_reduce_tensors_async_helper(tensors, callback, copy_manager):
   start_t = time.time()
   print(f"all_reduce_tensors_async_helper received {len(tensors)} tensors, thread {threading.get_native_id()}")
   for t in tensors:
     assert t.is_cuda
-    ctx = stage_tracker.create_ctx(async_reduce_sequence)
-    await all_reduce_impl_async(t, async_reduce_sequence, ctx)
-    async_reduce_sequence += 1
+    sequence = copy_manager.get_and_increment_sequence()
+    ctx = stage_tracker.create_ctx(sequence)
+    await all_reduce_impl_async(t, sequence, ctx)
   log_with_time_no_rank('all_reduce_tensors_async_helper', time.time() - start_t, -1)
 
-  if stage_tracker.should_print(async_reduce_sequence) and ctx.rank == 0:
+  if stage_tracker.should_print(sequence) and ctx.rank == 0:
     stage_tracker.print('client')
 
   print('invoking callback')
@@ -87,17 +92,15 @@ async def all_reduce_impl_async(gpu_buffer, sequence, ctx):
 
   cpu_tensor = gpu_buffer.to('cpu')
   log_with_time(f"copied to cpu", ctx)
-  await asyncio.sleep(0.250)
-  #reduced = await reducer.reduce.remote(
-  #    cpu_tensor,
-  #    client_name,
-  #    sequence,
-  #    ctx.rank,
-  #)
+  reduced = await reducer.reduce.remote(
+      cpu_tensor,
+      client_name,
+      sequence,
+      ctx.rank,
+  )
   log_with_time(f"called reduce", ctx)
 
-  #gpu_buffer.copy_(reduced)
-  await asyncio.sleep(0.05)
+  gpu_buffer.copy_(reduced)
   log_with_time(f"copied to gpu", ctx)
 
 class StageTracker:
