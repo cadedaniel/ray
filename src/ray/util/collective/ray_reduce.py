@@ -124,7 +124,7 @@ class StageTracker:
 
     def print(self, name):
         for k, v in self.stages.items():
-            print('stage_tracker_summary', name, f'"{k}"', f'{sum(v)/len(v):.02f}ms')
+            print(f'stage_tracker_summary {name} "{k}" {sum(v)/len(v):.02f}ms')
         self.stages = defaultdict(list)
 
 stage_tracker = StageTracker()

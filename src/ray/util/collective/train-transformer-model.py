@@ -244,6 +244,8 @@ class TrainActor:
             eval_dataset=lm_datasets["validation"],
             callbacks=[LoggerCallback],
         )
+
+        print('starting training')
         trainer.train()
 
 ray.init(address="auto")

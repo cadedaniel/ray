@@ -30,7 +30,7 @@ class Reducer:
 
         import torch
         self.inputs[sequence].append(tensor)
-        poll_period_s = 0.01
+        poll_period_s = 0.1
 
         assert client_name in self.clients
 
