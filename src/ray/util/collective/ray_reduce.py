@@ -86,11 +86,11 @@ async def all_reduce_tensors_async_helper(tensors, callback, copy_manager):
 
 async def all_reduce_impl_async(gpu_buffer, sequence, ctx):        
   print(f'all_reduce_impl_async for {gpu_buffer.data_ptr()} seq {sequence}, size_bytes={gpu_buffer.element_size() * gpu_buffer.nelement()}')
-  reducer = ray.get_actor(f"ray_reducer_{sequence%7}")
+  reducer = ray.get_actor(f"ray_reducer_{sequence%44}")
   client_name = f"cli:{ray.get_runtime_context().get_node_id()}:{gpu_buffer.get_device()}" 
   log_with_time(f"got actors", ctx)
 
-  cpu_tensor = gpu_buffer.to('cpu')
+  cpu_tensor = gpu_buffer.to('cpu').numpy()
   log_with_time(f"copied to cpu", ctx)
   reduced = await reducer.reduce.remote(
       cpu_tensor,
@@ -100,7 +100,7 @@ async def all_reduce_impl_async(gpu_buffer, sequence, ctx):
   )
   log_with_time(f"called reduce", ctx)
 
-  gpu_buffer.copy_(reduced)
+  gpu_buffer.copy_(torch.from_numpy(reduced))
   log_with_time(f"copied to gpu", ctx)
 
 class StageTracker:

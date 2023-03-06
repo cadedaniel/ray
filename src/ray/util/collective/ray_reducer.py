@@ -29,6 +29,7 @@ class Reducer:
         log_with_time('reduce entered', ctx)
 
         import torch
+        import numpy as np
         self.inputs[sequence].append(tensor)
         poll_period_s = 0.1
 
@@ -47,7 +48,8 @@ class Reducer:
             sum_tensors = tensors[0]
             #print('summing tensors: ', tensors)
             for t in tensors[1:]:
-                sum_tensors = torch.add(sum_tensors, t)
+                #sum_tensors = torch.add(sum_tensors, t)
+                sum_tensors = np.add(sum_tensors, t)
             log_with_time('tensor reduction complete', ctx)
 
             result = sum_tensors 
@@ -104,7 +106,7 @@ def set_up_ray_reduce(client_node_ids, ray_reducer_node_id):
 
     print(f'creating reducer on {ray_reducer_node_id} with {len(client_node_ids)} clients')
     reducer = []
-    for i in range(7):
+    for i in range(44):
         reducer.append(Reducer.options(
             name=f"ray_reducer_{i}",
             scheduling_strategy=schedule_on_node(ray_reducer_node_id),
