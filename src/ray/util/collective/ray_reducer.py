@@ -103,10 +103,12 @@ def set_up_ray_reduce(client_node_ids, ray_reducer_node_id):
         reducer_clients += [f"cli:{node_id}:{i}" for i in range(num_gpus)]
 
     print(f'creating reducer on {ray_reducer_node_id} with {len(client_node_ids)} clients')
-    reducer = Reducer.options(
-        name="ray_reducer",
-        scheduling_strategy=schedule_on_node(ray_reducer_node_id),
-    ).remote(reducer_clients)
+    reducer = []
+    for i in range(7):
+        reducer.append(Reducer.options(
+            name=f"ray_reducer_{i}",
+            scheduling_strategy=schedule_on_node(ray_reducer_node_id),
+        ).remote(reducer_clients))
     print('reducer created')
     return reducer
 

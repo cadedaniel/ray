@@ -86,7 +86,7 @@ async def all_reduce_tensors_async_helper(tensors, callback, copy_manager):
 
 async def all_reduce_impl_async(gpu_buffer, sequence, ctx):        
   print(f'all_reduce_impl_async for {gpu_buffer.data_ptr()} seq {sequence}, size_bytes={gpu_buffer.element_size() * gpu_buffer.nelement()}')
-  reducer = ray.get_actor("ray_reducer")
+  reducer = ray.get_actor(f"ray_reducer_{sequence%7}")
   client_name = f"cli:{ray.get_runtime_context().get_node_id()}:{gpu_buffer.get_device()}" 
   log_with_time(f"got actors", ctx)
 
