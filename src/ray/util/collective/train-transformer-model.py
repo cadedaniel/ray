@@ -8,23 +8,6 @@ os.environ['WANDB_DISABLED'] = 'true'
 os.environ['COMET_MODE'] = 'disabled'
 
 from transformers import TrainerCallback
-class LoggerCallback(TrainerCallback):
-
-    def __init__(self):
-        super().__init__()
-        self.last_step_begin_time = time.time()
-        self.step_index = 0
-        self.rank = int(os.environ['RANK'])
-
-    def on_step_begin(self, args, state, control, **kwargs):
-        if self.rank:
-            return
-
-        step_begin_time = time.time()
-        delta = step_begin_time - self.last_step_begin_time
-        self.last_step_begin_time = step_begin_time
-        print(f"(rank {args.local_rank}) on_step_begin {self.step_index}, last step {delta:.02f} s")
-        self.step_index += 1
 
 def prep_script():
     import subprocess
@@ -44,9 +27,28 @@ def prep_script():
 
         print('installing ray_collective')
         subprocess.run("python setup.py install", shell=True)
+    import ray_collectives
 
 @ray.remote(num_gpus=1)
 class TrainActor:
+
+    class LoggerCallback(TrainerCallback):
+    
+        def __init__(self):
+            super().__init__()
+            self.last_step_begin_time = time.time()
+            self.step_index = 0
+            self.rank = int(os.environ['RANK'])
+    
+        def on_step_begin(self, args, state, control, **kwargs):
+            if self.rank:
+                return
+    
+            step_begin_time = time.time()
+            delta = step_begin_time - self.last_step_begin_time
+            self.last_step_begin_time = step_begin_time
+            print(f"(rank {args.local_rank}) on_step_begin {self.step_index}, last step {delta:.02f} s")
+            self.step_index += 1
 
     def __init__(self, rank, local_rank, world_size, backend, num_gpus_per_node):
         print(f'init actor, rank {rank} world_size {world_size} backend {backend} num_gpus_per_node {num_gpus_per_node}')
@@ -242,13 +244,14 @@ class TrainActor:
             args=training_args,
             train_dataset=lm_datasets["train"],
             eval_dataset=lm_datasets["validation"],
-            callbacks=[LoggerCallback],
+            callbacks=[self.LoggerCallback],
         )
 
         print('starting training')
         trainer.train()
 
-ray.init(address="auto")
+#ray.init(address="auto")
+ray.init()
 
 backend = 'ray'
 
