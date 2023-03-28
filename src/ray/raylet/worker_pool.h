@@ -148,6 +148,14 @@ class IOWorkerPoolInterface {
 
 class WorkerInterface;
 class Worker;
+class WorkerPool;
+class WorkerPoolPolicy;
+
+struct PolicyAction {
+    std::vector<std::shared_ptr<WorkerInterface>> needs_remove;
+    size_t number_of_default_workers_to_create;
+};
+
 
 /// \class WorkerPool
 ///
@@ -155,6 +163,10 @@ class Worker;
 /// is a container for a unit of work.
 class WorkerPool : public WorkerPoolInterface, public IOWorkerPoolInterface {
  public:
+  std::shared_ptr<WorkerPoolPolicy> policy_;
+  PolicyAction CheckPolicy();
+  void CheckAndApplyPolicy();
+
   /// Create a pool and asynchronously start at least the specified number of workers per
   /// language.
   /// Once each worker process has registered with an external server, the
@@ -541,6 +553,7 @@ class WorkerPool : public WorkerPoolInterface, public IOWorkerPoolInterface {
   /// A helper function that returns the reference of the pool state
   /// for a given language.
   State &GetStateForLanguage(const Language &language);
+  const State &ConstGetStateForLanguage(const Language &language) const;
 
   /// Start a timer to monitor the starting worker process.
   ///
@@ -588,6 +601,8 @@ class WorkerPool : public WorkerPoolInterface, public IOWorkerPoolInterface {
   /// \return The workers of the given process.
   std::unordered_set<std::shared_ptr<WorkerInterface>> GetWorkersByProcess(
       const Process &process);
+  std::unordered_set<std::shared_ptr<WorkerInterface>> ConstGetWorkersByProcess(
+      const Process &process) const;
 
   /// Get either restore or spill worker state from state based on worker_type.
   ///
@@ -772,6 +787,60 @@ class WorkerPool : public WorkerPoolInterface, public IOWorkerPoolInterface {
   int64_t process_failed_runtime_env_setup_failed_ = 0;
 
   friend class WorkerPoolTest;
+  friend class WorkerPoolDriverRegisteredTest;
+  // Maybe not necessary..
+  friend class WorkerPoolPolicy;
+};
+
+class WorkerPoolPolicy {
+    public:
+        WorkerPoolPolicy(
+            WorkerPool const * pool,
+            //std::reference_wrapper<WorkerPool> pool2,
+            int num_prestart_python_workers,
+            int num_workers_soft_limit,
+            const std::function<double()> get_time
+        );
+        WorkerPoolPolicy() = delete;
+
+        //struct PrestartWorkersRequest {
+        //  const TaskSpecification task_spec;
+        //  int64_t backlog_size;
+        //  int64_t num_available_cpus;
+        //};
+
+        // Pass in the current lists.
+        // Ask for actions.
+        // Return map of action -> list of workers to apply action to.
+        PolicyAction CheckPolicy(
+            //const absl::flat_hash_map<Language, WorkerPool::State, std::hash<int>>& states_by_lang
+            const std::vector<std::shared_ptr<WorkerInterface>>& all_registered_workers,
+            const absl::flat_hash_map<WorkerID, std::shared_ptr<WorkerInterface>> &pending_exit_idle_workers,
+            const std::list<std::pair<std::shared_ptr<WorkerInterface>, int64_t>> & idle_of_all_languages
+
+        );
+        //void EnqueuePrestartWorkersRequest(const PrestartWorkersRequest& req);
+
+        void PopulateNeedsRemove(
+            const std::vector<std::shared_ptr<WorkerInterface>>& all_registered_workers,
+            const absl::flat_hash_map<WorkerID, std::shared_ptr<WorkerInterface>> &pending_exit_idle_workers,
+            const std::list<std::pair<std::shared_ptr<WorkerInterface>, int64_t>> & idle_of_all_languages,
+            std::vector<std::shared_ptr<WorkerInterface>>& needs_remove
+        );
+
+    private:
+        // Maybe not necessary..
+        WorkerPool const * pool_;
+        //std::reference_wrapper<WorkerPool> pool2_;
+        int num_prestart_python_workers_;
+        int num_workers_soft_limit_;
+
+        bool has_prestarted_workers_ = false;
+
+        // TODO make const
+        std::function<double()> get_time_;
+
+        //std::queue<PrestartWorkersRequest> prestart_workers_requests_;
 };
 
 }  // namespace raylet

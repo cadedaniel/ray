@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+
+import ray
+import time
+
+@ray.remote(num_cpus=0)
+class Latch:
+    def __init__(self, count):
+        self.initial_count = count
+        self.reset()
+
+    def decr(self):
+        self.count -= 1
+
+    def is_ready(self):
+        return self.count <= 0
+
+    def reset(self):
+        self.count = self.initial_count
+
+def wait_latch(latch):
+    latch.decr.remote()
+    while not ray.get(latch.is_ready.remote()):
+        time.sleep(0.01)
+
+@ray.remote(num_cpus=1)
+def task(latch):
+    wait_latch(latch)
+
+import os
+cpu_count = os.cpu_count()
+
+latch = Latch.remote(cpu_count)
+ray.get([task.remote(latch) for _ in range(cpu_count)])
+
+ray.get(latch.reset.remote())
+ray.get([task.remote(latch) for _ in range(cpu_count)])
+
+ray.get(latch.reset.remote())
+ray.get([task.remote(latch) for _ in range(cpu_count)])
