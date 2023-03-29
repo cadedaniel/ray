@@ -815,17 +815,16 @@ class WorkerIdlePoolPolicy {
         // Return map of action -> list of workers to apply action to.
         PolicyAction CheckPolicy(
             //const absl::flat_hash_map<Language, WorkerPool::State, std::hash<int>>& states_by_lang
-            const std::vector<std::shared_ptr<WorkerInterface>>& all_registered_workers,
-            const absl::flat_hash_map<WorkerID, std::shared_ptr<WorkerInterface>> &pending_exit_idle_workers,
-            const std::list<std::pair<std::shared_ptr<WorkerInterface>, int64_t>> & idle_of_all_languages
-
+            //const std::vector<std::shared_ptr<WorkerInterface>>& all_registered_workers,
+            //const absl::flat_hash_map<WorkerID, std::shared_ptr<WorkerInterface>> &pending_exit_idle_workers,
+            //const std::list<std::pair<std::shared_ptr<WorkerInterface>, int64_t>> & idle_of_all_languages
         );
         //void EnqueuePrestartWorkersRequest(const PrestartWorkersRequest& req);
 
         void PopulateNeedsRemove(
-            const std::vector<std::shared_ptr<WorkerInterface>>& all_registered_workers,
-            const absl::flat_hash_map<WorkerID, std::shared_ptr<WorkerInterface>> &pending_exit_idle_workers,
-            const std::list<std::pair<std::shared_ptr<WorkerInterface>, int64_t>> & idle_of_all_languages,
+            //const std::vector<std::shared_ptr<WorkerInterface>>& all_registered_workers,
+            //const absl::flat_hash_map<WorkerID, std::shared_ptr<WorkerInterface>> &pending_exit_idle_workers,
+            //const std::list<std::pair<std::shared_ptr<WorkerInterface>, int64_t>> & idle_of_all_languages,
             std::vector<std::shared_ptr<WorkerInterface>>& needs_remove
         );
 

@@ -172,9 +172,9 @@ WorkerPool::~WorkerPool() {
 
 PolicyAction WorkerPool::CheckPolicy() {
     auto action = idle_pool_policy_->CheckPolicy(
-        GetAllRegisteredWorkers(),
-        pending_exit_idle_workers_,
-        idle_of_all_languages_
+        //GetAllRegisteredWorkers(),
+        //pending_exit_idle_workers_,
+        //idle_of_all_languages_
     );
     return action;
 }
@@ -212,9 +212,9 @@ WorkerIdlePoolPolicy::WorkerIdlePoolPolicy(
 //}
 
 PolicyAction WorkerIdlePoolPolicy::CheckPolicy(
-    const std::vector<std::shared_ptr<WorkerInterface>>& all_registered_workers,
-    const absl::flat_hash_map<WorkerID, std::shared_ptr<WorkerInterface>> &pending_exit_idle_workers,
-    const std::list<std::pair<std::shared_ptr<WorkerInterface>, int64_t>> & idle_of_all_languages
+    //const std::vector<std::shared_ptr<WorkerInterface>>& all_registered_workers,
+    //const absl::flat_hash_map<WorkerID, std::shared_ptr<WorkerInterface>> &pending_exit_idle_workers,
+    //const std::list<std::pair<std::shared_ptr<WorkerInterface>, int64_t>> & idle_of_all_languages
 ) {
     PolicyAction action{};
 
@@ -225,9 +225,9 @@ PolicyAction WorkerIdlePoolPolicy::CheckPolicy(
     }
 
     PopulateNeedsRemove(
-        all_registered_workers,
-        pending_exit_idle_workers,
-        idle_of_all_languages,
+        //all_registered_workers,
+        //pending_exit_idle_workers,
+        //idle_of_all_languages,
         action.needs_remove
     );
 
@@ -235,15 +235,15 @@ PolicyAction WorkerIdlePoolPolicy::CheckPolicy(
 }
 
 void WorkerIdlePoolPolicy::PopulateNeedsRemove(
-    const std::vector<std::shared_ptr<WorkerInterface>>& all_registered_workers,
-    const absl::flat_hash_map<WorkerID, std::shared_ptr<WorkerInterface>> &pending_exit_idle_workers,
-    const std::list<std::pair<std::shared_ptr<WorkerInterface>, int64_t>> & idle_of_all_languages,
+    //const std::vector<std::shared_ptr<WorkerInterface>>& all_registered_workers,
+    //const absl::flat_hash_map<WorkerID, std::shared_ptr<WorkerInterface>> &pending_exit_idle_workers,
+    //const std::list<std::pair<std::shared_ptr<WorkerInterface>, int64_t>> & idle_of_all_languages,
     std::vector<std::shared_ptr<WorkerInterface>>& needs_remove
 ) {
   int64_t now = get_time_();
   size_t running_size = 0;
 
-  for (const auto &worker : all_registered_workers) {
+  for (const auto &worker : pool_ref_.GetAllRegisteredWorkers()) {
     if (!worker->IsDead() && worker->GetWorkerType() == rpc::WorkerType::WORKER) {
       running_size++;
     }
@@ -251,11 +251,11 @@ void WorkerIdlePoolPolicy::PopulateNeedsRemove(
 
   // Subtract the number of pending exit workers first. This will help us killing more
   // idle workers that it needs to.
-  RAY_CHECK(running_size >= pending_exit_idle_workers.size());
-  running_size -= pending_exit_idle_workers.size();
+  RAY_CHECK(running_size >= pool_ref_.pending_exit_idle_workers_.size());
+  running_size -= pool_ref_.pending_exit_idle_workers_.size();
 
   // Kill idle workers in FIFO order.
-  for (const auto &idle_pair : idle_of_all_languages) {
+  for (const auto &idle_pair : pool_ref_.idle_of_all_languages_) {
     const auto &idle_worker = idle_pair.first;
     const auto &job_id = idle_worker->GetAssignedJobId();
 

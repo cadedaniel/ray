@@ -103,7 +103,7 @@ class WorkerInterface {
 
   virtual void SetAssignedTask(const RayTask &assigned_task) = 0;
 
-  virtual bool IsRegistered() = 0;
+  virtual bool IsRegistered() const = 0;
 
   virtual rpc::CoreWorkerClientInterface *rpc_client() = 0;
 
@@ -225,7 +225,7 @@ class Worker : public WorkerInterface {
 
   absl::Time GetAssignedTaskTime() const { return task_assign_time_; };
 
-  bool IsRegistered() { return rpc_client_ != nullptr; }
+  bool IsRegistered() const { return rpc_client_ != nullptr; }
 
   bool IsAvailableForScheduling() const {
     return !IsDead()                        // Not dead
