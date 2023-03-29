@@ -151,12 +151,6 @@ class Worker;
 class WorkerPool;
 class WorkerIdlePoolPolicy;
 
-struct PolicyAction {
-    std::vector<std::shared_ptr<WorkerInterface>> needs_remove;
-    size_t number_of_default_workers_to_create;
-};
-
-
 /// \class WorkerPool
 ///
 /// The WorkerPool is responsible for managing a pool of Workers. Each Worker
@@ -164,8 +158,6 @@ struct PolicyAction {
 class WorkerPool : public WorkerPoolInterface, public IOWorkerPoolInterface {
  public:
   std::shared_ptr<WorkerIdlePoolPolicy> idle_pool_policy_;
-  PolicyAction CheckPolicy();
-  void CheckAndApplyPolicy();
 
   /// Create a pool and asynchronously start at least the specified number of workers per
   /// language.
@@ -723,8 +715,6 @@ class WorkerPool : public WorkerPoolInterface, public IOWorkerPoolInterface {
   const NodeID node_id_;
   /// Address of the current node.
   const std::string node_address_;
-  /// The soft limit of the number of registered workers.
-  int num_workers_soft_limit_;
   /// The maximum number of worker processes that can be started concurrently.
   int maximum_startup_concurrency_;
   /// Keeps track of unused ports that newly-created workers can bind on.
@@ -795,53 +785,22 @@ class WorkerPool : public WorkerPoolInterface, public IOWorkerPoolInterface {
 class WorkerIdlePoolPolicy {
     public:
         WorkerIdlePoolPolicy(
-            WorkerPool const * pool,
-            const WorkerPool& pool_ref,
-            //std::reference_wrapper<WorkerPool> pool2,
-            int num_prestart_python_workers,
-            int num_workers_soft_limit,
-            const std::function<double()> get_time
+            const WorkerPool& worker_pool,
+            int num_workers_soft_limit
         );
         WorkerIdlePoolPolicy() = delete;
 
-        //struct PrestartWorkersRequest {
-        //  const TaskSpecification task_spec;
-        //  int64_t backlog_size;
-        //  int64_t num_available_cpus;
-        //};
+        std::vector<std::shared_ptr<WorkerInterface>> GetIdleWorkersToRemove() const;
 
-        // Pass in the current lists.
-        // Ask for actions.
-        // Return map of action -> list of workers to apply action to.
-        PolicyAction CheckPolicy(
-            //const absl::flat_hash_map<Language, WorkerPool::State, std::hash<int>>& states_by_lang
-            //const std::vector<std::shared_ptr<WorkerInterface>>& all_registered_workers,
-            //const absl::flat_hash_map<WorkerID, std::shared_ptr<WorkerInterface>> &pending_exit_idle_workers,
-            //const std::list<std::pair<std::shared_ptr<WorkerInterface>, int64_t>> & idle_of_all_languages
-        );
-        //void EnqueuePrestartWorkersRequest(const PrestartWorkersRequest& req);
-
-        void PopulateNeedsRemove(
-            //const std::vector<std::shared_ptr<WorkerInterface>>& all_registered_workers,
-            //const absl::flat_hash_map<WorkerID, std::shared_ptr<WorkerInterface>> &pending_exit_idle_workers,
-            //const std::list<std::pair<std::shared_ptr<WorkerInterface>, int64_t>> & idle_of_all_languages,
-            std::vector<std::shared_ptr<WorkerInterface>>& needs_remove
-        );
+        void PopulateIdleWorkersToRemove(
+            std::vector<std::shared_ptr<WorkerInterface>>& idle_workers_to_remove
+        ) const;
 
     private:
-        // Maybe not necessary..
-        WorkerPool const * pool_;
-        const WorkerPool& pool_ref_;
-        //std::reference_wrapper<WorkerPool> pool2_;
-        int num_prestart_python_workers_;
-        int num_workers_soft_limit_;
+        const WorkerPool& worker_pool_;
 
-        bool has_prestarted_workers_ = false;
-
-        // TODO make const
-        std::function<double()> get_time_;
-
-        //std::queue<PrestartWorkersRequest> prestart_workers_requests_;
+        /// The soft limit of the number of registered workers.
+        const int num_workers_soft_limit_;
 };
 
 }  // namespace raylet
