@@ -149,7 +149,7 @@ class IOWorkerPoolInterface {
 class WorkerInterface;
 class Worker;
 class WorkerPool;
-class WorkerPoolPolicy;
+class WorkerIdlePoolPolicy;
 
 struct PolicyAction {
     std::vector<std::shared_ptr<WorkerInterface>> needs_remove;
@@ -163,7 +163,7 @@ struct PolicyAction {
 /// is a container for a unit of work.
 class WorkerPool : public WorkerPoolInterface, public IOWorkerPoolInterface {
  public:
-  std::shared_ptr<WorkerPoolPolicy> policy_;
+  std::shared_ptr<WorkerIdlePoolPolicy> idle_pool_policy_;
   PolicyAction CheckPolicy();
   void CheckAndApplyPolicy();
 
@@ -789,19 +789,20 @@ class WorkerPool : public WorkerPoolInterface, public IOWorkerPoolInterface {
   friend class WorkerPoolTest;
   friend class WorkerPoolDriverRegisteredTest;
   // Maybe not necessary..
-  friend class WorkerPoolPolicy;
+  friend class WorkerIdlePoolPolicy;
 };
 
-class WorkerPoolPolicy {
+class WorkerIdlePoolPolicy {
     public:
-        WorkerPoolPolicy(
+        WorkerIdlePoolPolicy(
             WorkerPool const * pool,
+            const WorkerPool& pool_ref,
             //std::reference_wrapper<WorkerPool> pool2,
             int num_prestart_python_workers,
             int num_workers_soft_limit,
             const std::function<double()> get_time
         );
-        WorkerPoolPolicy() = delete;
+        WorkerIdlePoolPolicy() = delete;
 
         //struct PrestartWorkersRequest {
         //  const TaskSpecification task_spec;
@@ -831,6 +832,7 @@ class WorkerPoolPolicy {
     private:
         // Maybe not necessary..
         WorkerPool const * pool_;
+        const WorkerPool& pool_ref_;
         //std::reference_wrapper<WorkerPool> pool2_;
         int num_prestart_python_workers_;
         int num_workers_soft_limit_;

@@ -109,8 +109,9 @@ WorkerPool::WorkerPool(instrumented_io_context &io_service,
   stats::NumCachedWorkersSkippedDynamicOptionsMismatch.Record(0);
   stats::NumCachedWorkersSkippedRuntimeEnvironmentMismatch.Record(0);
 
-  policy_ = std::make_shared<WorkerPoolPolicy>(
+  idle_pool_policy_ = std::make_shared<WorkerIdlePoolPolicy>(
     this,
+    *this,
     //std::ref(this),
     num_initial_python_workers_for_first_job,
     num_workers_soft_limit_,
@@ -170,7 +171,7 @@ WorkerPool::~WorkerPool() {
 }
 
 PolicyAction WorkerPool::CheckPolicy() {
-    auto action = policy_->CheckPolicy(
+    auto action = idle_pool_policy_->CheckPolicy(
         GetAllRegisteredWorkers(),
         pending_exit_idle_workers_,
         idle_of_all_languages_
@@ -187,28 +188,30 @@ void WorkerPool::CheckAndApplyPolicy() {
 
 }
 
-WorkerPoolPolicy::WorkerPoolPolicy(
+WorkerIdlePoolPolicy::WorkerIdlePoolPolicy(
     const WorkerPool* pool,
+    const WorkerPool& pool_ref,
     //std::reference_wrapper<WorkerPool> pool2,
     int num_prestart_python_workers,
     int num_workers_soft_limit,
     std::function<double()> get_time
 ) : pool_(pool),
+    pool_ref_(pool_ref),
     //pool2_(pool2),
     num_prestart_python_workers_(num_prestart_python_workers),
     num_workers_soft_limit_(num_workers_soft_limit),
     get_time_(get_time) { }
 
-//WorkerPoolPolicy::WorkerPoolPolicy()
+//WorkerIdlePoolPolicy::WorkerIdlePoolPolicy()
 //    : pool_(nullptr),
 //    pool2_(nullptr)
 //    {}
 
-//void WorkerPoolPolicy::EnqueuePrestartWorkersRequest(const PrestartWorkersRequest& req) {
+//void WorkerIdlePoolPolicy::EnqueuePrestartWorkersRequest(const PrestartWorkersRequest& req) {
 //    prestart_workers_requests_.push(req);
 //}
 
-PolicyAction WorkerPoolPolicy::CheckPolicy(
+PolicyAction WorkerIdlePoolPolicy::CheckPolicy(
     const std::vector<std::shared_ptr<WorkerInterface>>& all_registered_workers,
     const absl::flat_hash_map<WorkerID, std::shared_ptr<WorkerInterface>> &pending_exit_idle_workers,
     const std::list<std::pair<std::shared_ptr<WorkerInterface>, int64_t>> & idle_of_all_languages
@@ -231,7 +234,7 @@ PolicyAction WorkerPoolPolicy::CheckPolicy(
     return action;
 }
 
-void WorkerPoolPolicy::PopulateNeedsRemove(
+void WorkerIdlePoolPolicy::PopulateNeedsRemove(
     const std::vector<std::shared_ptr<WorkerInterface>>& all_registered_workers,
     const absl::flat_hash_map<WorkerID, std::shared_ptr<WorkerInterface>> &pending_exit_idle_workers,
     const std::list<std::pair<std::shared_ptr<WorkerInterface>, int64_t>> & idle_of_all_languages,
@@ -261,7 +264,7 @@ void WorkerPoolPolicy::PopulateNeedsRemove(
                    << " worker id " << idle_worker->WorkerId();
 
     if (running_size <= static_cast<size_t>(num_workers_soft_limit_)) {
-      if (!pool_->finished_jobs_.contains(job_id)) {
+      if (!pool_ref_.finished_jobs_.contains(job_id)) {
         // Ignore the soft limit for jobs that have already finished, as we
         // should always clean up these workers.
         RAY_LOG(DEBUG) << "job not finished. Not going to kill worker "
@@ -284,7 +287,7 @@ void WorkerPoolPolicy::PopulateNeedsRemove(
     }
     auto worker_startup_token = idle_worker->GetStartupToken();
     // TODO deal with constness
-    auto &worker_state = pool_->ConstGetStateForLanguage(idle_worker->GetLanguage());
+    auto &worker_state = pool_ref_.ConstGetStateForLanguage(idle_worker->GetLanguage());
 
     auto it = worker_state.worker_processes.find(worker_startup_token);
     if (it != worker_state.worker_processes.end() && it->second.is_pending_registration) {
@@ -298,12 +301,12 @@ void WorkerPoolPolicy::PopulateNeedsRemove(
     auto process = idle_worker->GetProcess();
     // Make sure all workers in this worker process are idle.
     // This block of code is needed by Java workers.
-    auto workers_in_the_same_process = pool_->ConstGetWorkersByProcess(process);
+    auto workers_in_the_same_process = pool_ref_.ConstGetWorkersByProcess(process);
     bool can_be_killed = true;
     for (const auto &worker : workers_in_the_same_process) {
       // TODO(cade) []->at
       if (worker_state.idle.count(worker) == 0 ||
-          now - pool_->idle_of_all_languages_map_.at(worker) <
+          now - pool_ref_.idle_of_all_languages_map_.at(worker) <
               RayConfig::instance().idle_worker_killing_time_threshold_ms()) {
         // Another worker in this process isn't idle, or hasn't been idle for a while, so
         // this process can't be killed.
@@ -313,7 +316,7 @@ void WorkerPoolPolicy::PopulateNeedsRemove(
 
       // Skip killing the worker process if there's any inflight `Exit` RPC requests to
       // this worker process.
-      if (pool_->pending_exit_idle_workers_.count(worker->WorkerId())) {
+      if (pool_ref_.pending_exit_idle_workers_.count(worker->WorkerId())) {
         can_be_killed = false;
         break;
       }
@@ -327,7 +330,7 @@ void WorkerPoolPolicy::PopulateNeedsRemove(
         static_cast<size_t>(num_workers_soft_limit_)) {
       // A Java worker process may contain multiple workers. Killing more workers than we
       // expect may slow the job.
-      if (!pool_->finished_jobs_.count(job_id)) {
+      if (!pool_ref_.finished_jobs_.count(job_id)) {
         // Ignore the soft limit for jobs that have already finished, as we
         // should always clean up these workers.
         return;
@@ -1461,8 +1464,8 @@ void WorkerPool::PrestartWorkers(const TaskSpecification &task_spec,
   //  .backlog_size = backlog_size,
   //  .num_available_cpus = num_available_cpus
   //};
-  //policy_.EnqueuePrestartWorkersRequest(req);
-  //policy_.SchedulingHint(const TaskSpecification &task_spec, int64_t backlog_size);
+  //idle_pool_policy_.EnqueuePrestartWorkersRequest(req);
+  //idle_pool_policy_.SchedulingHint(const TaskSpecification &task_spec, int64_t backlog_size);
   // The difficulty with scheduling hints is that we need an accurate view of what happens.
 
   // Really, PrestartWorkers is misnamed.
