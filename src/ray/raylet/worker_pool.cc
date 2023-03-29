@@ -1199,32 +1199,19 @@ void WorkerPool::TryKillingIdleWorkers() {
   RAY_CHECK(idle_of_all_languages_.size() == idle_of_all_languages_map_.size());
   
   auto action = CheckPolicy();
-  for (const auto& worker_to_remove : action.needs_remove) {
-    size_t running_size = 0;
-    const auto& worker = worker_to_remove;
-    auto process = worker->GetProcess();
-    const auto &job_id = worker->GetAssignedJobId();
-    auto &worker_state = GetStateForLanguage(worker->GetLanguage());
-    RAY_LOG(DEBUG) << "The worker pool has " << running_size // TODO(cade) rewrite log message
-                   << " registered workers which exceeds the soft limit of "
-                   << num_workers_soft_limit_ << ", and worker " << worker->WorkerId()
-                   << " with pid " << process.GetId()
-                   << " has been idle for a a while. Kill it.";
+  for (const auto& worker : action.needs_remove) {
     // To avoid object lost issue caused by forcibly killing, send an RPC request to the
     // worker to allow it to do cleanup before exiting. We kill it anyway if the driver
     // is already exited.
     if (!worker->IsDead()) {
       RAY_LOG(DEBUG) << "Sending exit message to worker " << worker->WorkerId();
-      // Register the worker to pending exit so that we can correctly calculate the
-      // running_size.
+      // Register the worker as pending exit so that we don't attempt to kill it again.
       // This also means that there's an inflight `Exit` RPC request to the worker.
       pending_exit_idle_workers_.emplace(worker->WorkerId(), worker);
       auto rpc_client = worker->rpc_client();
       RAY_CHECK(rpc_client);
-      //RAY_CHECK(running_size > 0); // TODO(cade) see risk of deleting this
-      //running_size--;
       rpc::ExitRequest request;
-      if (finished_jobs_.contains(job_id) &&
+      if (finished_jobs_.contains(worker->GetAssignedJobId()) &&
           RayConfig::instance().kill_idle_workers_of_terminated_job()) {
         RAY_LOG(INFO) << "Force exiting worker whose job has exited "
                       << worker->WorkerId();
@@ -1268,6 +1255,7 @@ void WorkerPool::TryKillingIdleWorkers() {
       RAY_LOG(DEBUG) << "Removing dead worker " << worker->WorkerId();
 
       // Even it's a dead worker, we still need to remove them from the pool.
+      auto &worker_state = GetStateForLanguage(worker->GetLanguage());
       RemoveWorker(worker_state.idle, worker);
     }
   }
