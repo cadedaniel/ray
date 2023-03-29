@@ -1210,205 +1210,210 @@ void WorkerPool::TryKillingIdleWorkers() {
   
   auto action = CheckPolicy();
   std::vector<std::shared_ptr<WorkerInterface>> needs_remove = action.needs_remove;
-  std::vector<std::shared_ptr<WorkerInterface>> actually_removed;
+  //std::vector<std::shared_ptr<WorkerInterface>> actually_removed;
 
-  int64_t now = get_time_();
-  size_t running_size = 0;
-  for (const auto &worker : GetAllRegisteredWorkers()) {
-    if (!worker->IsDead() && worker->GetWorkerType() == rpc::WorkerType::WORKER) {
-      running_size++;
-    }
-  }
-  // Subtract the number of pending exit workers first. This will help us killing more
-  // idle workers that it needs to.
-  RAY_CHECK(running_size >= pending_exit_idle_workers_.size());
-  running_size -= pending_exit_idle_workers_.size();
+  //int64_t now = get_time_();
+  //size_t running_size = 0;
+  //for (const auto &worker : GetAllRegisteredWorkers()) {
+  //  if (!worker->IsDead() && worker->GetWorkerType() == rpc::WorkerType::WORKER) {
+  //    running_size++;
+  //  }
+  //}
+  //// Subtract the number of pending exit workers first. This will help us killing more
+  //// idle workers that it needs to.
+  //RAY_CHECK(running_size >= pending_exit_idle_workers_.size());
+  //running_size -= pending_exit_idle_workers_.size();
   // Kill idle workers in FIFO order.
-  for (const auto &idle_pair : idle_of_all_languages_) {
-    const auto &idle_worker = idle_pair.first;
-    const auto &job_id = idle_worker->GetAssignedJobId();
+  for (const auto& worker_to_remove : needs_remove) {
+  //for (const auto &idle_pair : idle_of_all_languages_) {
+    //const auto &idle_worker = idle_pair.first;
+    //const auto &job_id = idle_worker->GetAssignedJobId();
 
-    RAY_LOG(DEBUG) << " Checking idle worker "
-                   << idle_worker->GetAssignedTask().GetTaskSpecification().DebugString()
-                   << " worker id " << idle_worker->WorkerId();
+    //RAY_LOG(DEBUG) << " Checking idle worker "
+    //               << idle_worker->GetAssignedTask().GetTaskSpecification().DebugString()
+    //               << " worker id " << idle_worker->WorkerId();
 
-    if (running_size <= static_cast<size_t>(num_workers_soft_limit_)) {
-      if (!finished_jobs_.contains(job_id)) {
-        // Ignore the soft limit for jobs that have already finished, as we
-        // should always clean up these workers.
-        RAY_LOG(DEBUG) << "job not finished. Not going to kill worker "
-                       << idle_worker->WorkerId();
-        continue;
+    //if (running_size <= static_cast<size_t>(num_workers_soft_limit_)) {
+    //  if (!finished_jobs_.contains(job_id)) {
+    //    // Ignore the soft limit for jobs that have already finished, as we
+    //    // should always clean up these workers.
+    //    RAY_LOG(DEBUG) << "job not finished. Not going to kill worker "
+    //                   << idle_worker->WorkerId();
+    //    continue;
+    //  }
+    //}
+
+    //if (now - idle_pair.second <
+    //    RayConfig::instance().idle_worker_killing_time_threshold_ms()) {
+    //  break;
+    //}
+
+    //if (idle_worker->IsDead()) {
+    //  RAY_LOG(DEBUG) << "idle worker is already dead. Not going to kill worker "
+    //                 << idle_worker->WorkerId();
+    //  // This worker has already been killed.
+    //  // This is possible because a Java worker process may hold multiple workers.
+    //  continue;
+    //}
+    //auto worker_startup_token = idle_worker->GetStartupToken();
+    //auto &worker_state = GetStateForLanguage(idle_worker->GetLanguage());
+
+    //auto it = worker_state.worker_processes.find(worker_startup_token);
+    //if (it != worker_state.worker_processes.end() && it->second.is_pending_registration) {
+    //  // A Java worker process may hold multiple workers.
+    //  // Some workers of this process are pending registration. Skip killing this worker.
+    //  continue;
+    //}
+
+    //// TODO(clarng): get rid of multiple workers per process code here, as that is
+    //// not longer supported.
+    //auto process = idle_worker->GetProcess();
+    //// Make sure all workers in this worker process are idle.
+    //// This block of code is needed by Java workers.
+    //auto workers_in_the_same_process = GetWorkersByProcess(process);
+    //bool can_be_killed = true;
+    //for (const auto &worker : workers_in_the_same_process) {
+    //  if (worker_state.idle.count(worker) == 0 ||
+    //      now - idle_of_all_languages_map_[worker] <
+    //          RayConfig::instance().idle_worker_killing_time_threshold_ms()) {
+    //    // Another worker in this process isn't idle, or hasn't been idle for a while, so
+    //    // this process can't be killed.
+    //    can_be_killed = false;
+    //    break;
+    //  }
+
+    //  // Skip killing the worker process if there's any inflight `Exit` RPC requests to
+    //  // this worker process.
+    //  if (pending_exit_idle_workers_.count(worker->WorkerId())) {
+    //    can_be_killed = false;
+    //    break;
+    //  }
+    //}
+    //if (!can_be_killed) {
+    //  continue;
+    //}
+
+    //RAY_CHECK(running_size >= workers_in_the_same_process.size());
+    //if (running_size - workers_in_the_same_process.size() <
+    //    static_cast<size_t>(num_workers_soft_limit_)) {
+    //  // A Java worker process may contain multiple workers. Killing more workers than we
+    //  // expect may slow the job.
+    //  if (!finished_jobs_.count(job_id)) {
+    //    // Ignore the soft limit for jobs that have already finished, as we
+    //    // should always clean up these workers.
+    //    return;
+    //  }
+    //}
+    size_t running_size = 0;
+    const auto& worker = worker_to_remove;
+    auto process = worker->GetProcess();
+    const auto &job_id = worker->GetAssignedJobId();
+    auto &worker_state = GetStateForLanguage(worker->GetLanguage());
+    //for (const auto &worker : workers_in_the_same_process) {
+    RAY_LOG(DEBUG) << "The worker pool has " << running_size
+                   << " registered workers which exceeds the soft limit of "
+                   << num_workers_soft_limit_ << ", and worker " << worker->WorkerId()
+                   << " with pid " << process.GetId()
+                   << " has been idle for a a while. Kill it.";
+    // To avoid object lost issue caused by forcibly killing, send an RPC request to the
+    // worker to allow it to do cleanup before exiting. We kill it anyway if the driver
+    // is already exited.
+    if (!worker->IsDead()) {
+      RAY_LOG(DEBUG) << "Sending exit message to worker " << worker->WorkerId();
+      // Register the worker to pending exit so that we can correctly calculate the
+      // running_size.
+      // This also means that there's an inflight `Exit` RPC request to the worker.
+      pending_exit_idle_workers_.emplace(worker->WorkerId(), worker);
+      auto rpc_client = worker->rpc_client();
+      RAY_CHECK(rpc_client);
+      //RAY_CHECK(running_size > 0); // TODO see risk of deleting this
+      //running_size--;
+      rpc::ExitRequest request;
+      if (finished_jobs_.contains(job_id) &&
+          RayConfig::instance().kill_idle_workers_of_terminated_job()) {
+        RAY_LOG(INFO) << "Force exiting worker whose job has exited "
+                      << worker->WorkerId();
+        request.set_force_exit(true);
       }
-    }
+      //actually_removed.push_back(worker);
+      rpc_client->Exit(
+          request, [this, worker](const ray::Status &status, const rpc::ExitReply &r) {
+            RAY_CHECK(pending_exit_idle_workers_.erase(worker->WorkerId()));
+            if (!status.ok()) {
+              RAY_LOG(ERROR) << "Failed to send exit request: " << status.ToString();
+            }
 
-    if (now - idle_pair.second <
-        RayConfig::instance().idle_worker_killing_time_threshold_ms()) {
-      break;
-    }
-
-    if (idle_worker->IsDead()) {
-      RAY_LOG(DEBUG) << "idle worker is already dead. Not going to kill worker "
-                     << idle_worker->WorkerId();
-      // This worker has already been killed.
-      // This is possible because a Java worker process may hold multiple workers.
-      continue;
-    }
-    auto worker_startup_token = idle_worker->GetStartupToken();
-    auto &worker_state = GetStateForLanguage(idle_worker->GetLanguage());
-
-    auto it = worker_state.worker_processes.find(worker_startup_token);
-    if (it != worker_state.worker_processes.end() && it->second.is_pending_registration) {
-      // A Java worker process may hold multiple workers.
-      // Some workers of this process are pending registration. Skip killing this worker.
-      continue;
-    }
-
-    // TODO(clarng): get rid of multiple workers per process code here, as that is
-    // not longer supported.
-    auto process = idle_worker->GetProcess();
-    // Make sure all workers in this worker process are idle.
-    // This block of code is needed by Java workers.
-    auto workers_in_the_same_process = GetWorkersByProcess(process);
-    bool can_be_killed = true;
-    for (const auto &worker : workers_in_the_same_process) {
-      if (worker_state.idle.count(worker) == 0 ||
-          now - idle_of_all_languages_map_[worker] <
-              RayConfig::instance().idle_worker_killing_time_threshold_ms()) {
-        // Another worker in this process isn't idle, or hasn't been idle for a while, so
-        // this process can't be killed.
-        can_be_killed = false;
-        break;
-      }
-
-      // Skip killing the worker process if there's any inflight `Exit` RPC requests to
-      // this worker process.
-      if (pending_exit_idle_workers_.count(worker->WorkerId())) {
-        can_be_killed = false;
-        break;
-      }
-    }
-    if (!can_be_killed) {
-      continue;
-    }
-
-    RAY_CHECK(running_size >= workers_in_the_same_process.size());
-    if (running_size - workers_in_the_same_process.size() <
-        static_cast<size_t>(num_workers_soft_limit_)) {
-      // A Java worker process may contain multiple workers. Killing more workers than we
-      // expect may slow the job.
-      if (!finished_jobs_.count(job_id)) {
-        // Ignore the soft limit for jobs that have already finished, as we
-        // should always clean up these workers.
-        return;
-      }
-    }
-
-    for (const auto &worker : workers_in_the_same_process) {
-      RAY_LOG(DEBUG) << "The worker pool has " << running_size
-                     << " registered workers which exceeds the soft limit of "
-                     << num_workers_soft_limit_ << ", and worker " << worker->WorkerId()
-                     << " with pid " << process.GetId()
-                     << " has been idle for a a while. Kill it.";
-      // To avoid object lost issue caused by forcibly killing, send an RPC request to the
-      // worker to allow it to do cleanup before exiting. We kill it anyway if the driver
-      // is already exited.
-      if (!worker->IsDead()) {
-        RAY_LOG(DEBUG) << "Sending exit message to worker " << worker->WorkerId();
-        // Register the worker to pending exit so that we can correctly calculate the
-        // running_size.
-        // This also means that there's an inflight `Exit` RPC request to the worker.
-        pending_exit_idle_workers_.emplace(worker->WorkerId(), worker);
-        auto rpc_client = worker->rpc_client();
-        RAY_CHECK(rpc_client);
-        RAY_CHECK(running_size > 0);
-        running_size--;
-        rpc::ExitRequest request;
-        if (finished_jobs_.contains(job_id) &&
-            RayConfig::instance().kill_idle_workers_of_terminated_job()) {
-          RAY_LOG(INFO) << "Force exiting worker whose job has exited "
-                        << worker->WorkerId();
-          request.set_force_exit(true);
-        }
-        actually_removed.push_back(worker);
-        rpc_client->Exit(
-            request, [this, worker](const ray::Status &status, const rpc::ExitReply &r) {
-              RAY_CHECK(pending_exit_idle_workers_.erase(worker->WorkerId()));
-              if (!status.ok()) {
-                RAY_LOG(ERROR) << "Failed to send exit request: " << status.ToString();
+            // In case of failed to send request, we remove it from pool as well
+            // TODO (iycheng): We should handle the grpc failure in better way.
+            if (!status.ok() || r.success()) {
+              RAY_LOG(DEBUG) << "Removed worker " << worker->WorkerId();
+              auto &worker_state = GetStateForLanguage(worker->GetLanguage());
+              // If we could kill the worker properly, we remove them from the idle
+              // pool.
+              RemoveWorker(worker_state.idle, worker);
+              // We always mark the worker as dead.
+              // If the worker is not idle at this moment, we'd want to mark it as dead
+              // so it won't be reused later.
+              if (!worker->IsDead()) {
+                worker->MarkDead();
               }
+            } else {
+              RAY_LOG(DEBUG) << "Failed to remove worker " << worker->WorkerId();
+              // We re-insert the idle worker to the back of the queue if it fails to
+              // kill the worker (e.g., when the worker owns the object). Without this,
+              // if the first N workers own objects, it can't kill idle workers that are
+              // >= N+1.
+              const auto &idle_pair = idle_of_all_languages_.front();
+              idle_of_all_languages_.push_back(idle_pair);
+              idle_of_all_languages_.pop_front();
+              RAY_CHECK(idle_of_all_languages_.size() ==
+                        idle_of_all_languages_map_.size());
+            }
+          });
+    } else {
+      RAY_LOG(DEBUG) << "Removing dead worker " << worker->WorkerId();
 
-              // In case of failed to send request, we remove it from pool as well
-              // TODO (iycheng): We should handle the grpc failure in better way.
-              if (!status.ok() || r.success()) {
-                RAY_LOG(DEBUG) << "Removed worker " << worker->WorkerId();
-                auto &worker_state = GetStateForLanguage(worker->GetLanguage());
-                // If we could kill the worker properly, we remove them from the idle
-                // pool.
-                RemoveWorker(worker_state.idle, worker);
-                // We always mark the worker as dead.
-                // If the worker is not idle at this moment, we'd want to mark it as dead
-                // so it won't be reused later.
-                if (!worker->IsDead()) {
-                  worker->MarkDead();
-                }
-              } else {
-                RAY_LOG(DEBUG) << "Failed to remove worker " << worker->WorkerId();
-                // We re-insert the idle worker to the back of the queue if it fails to
-                // kill the worker (e.g., when the worker owns the object). Without this,
-                // if the first N workers own objects, it can't kill idle workers that are
-                // >= N+1.
-                const auto &idle_pair = idle_of_all_languages_.front();
-                idle_of_all_languages_.push_back(idle_pair);
-                idle_of_all_languages_.pop_front();
-                RAY_CHECK(idle_of_all_languages_.size() ==
-                          idle_of_all_languages_map_.size());
-              }
-            });
-      } else {
-        RAY_LOG(DEBUG) << "Removing dead worker " << worker->WorkerId();
-
-        // Even it's a dead worker, we still need to remove them from the pool.
-        RemoveWorker(worker_state.idle, worker);
-        actually_removed.push_back(worker);
-      }
-    }
-  }
+      // Even it's a dead worker, we still need to remove them from the pool.
+      RemoveWorker(worker_state.idle, worker);
+      //actually_removed.push_back(worker);
+    } // if (!worker->IsDead()) { else
+    //} // for (const auto &worker : workers_in_the_same_process) {
+  } // for (const auto &idle_pair : idle_of_all_languages_) {
     
-  if (actually_removed.size() > 0 || needs_remove.size() > 0) {
-    RAY_LOG(DEBUG) << "Comparing actually killed workers against what we said should be killed.";
-    
-    absl::flat_hash_set<WorkerID> actually;
-    absl::flat_hash_set<WorkerID> needs;
+  //if (actually_removed.size() > 0 || needs_remove.size() > 0) {
+  //  RAY_LOG(DEBUG) << "Comparing actually killed workers against what we said should be killed.";
+  //  
+  //  absl::flat_hash_set<WorkerID> actually;
+  //  absl::flat_hash_set<WorkerID> needs;
 
-    for (auto worker : actually_removed) {
-      actually.insert(worker->WorkerId());
-    }
+  //  for (auto worker : actually_removed) {
+  //    actually.insert(worker->WorkerId());
+  //  }
 
-    for (auto worker : needs_remove) {
-      needs.insert(worker->WorkerId());
-    }
+  //  for (auto worker : needs_remove) {
+  //    needs.insert(worker->WorkerId());
+  //  }
 
-    bool equal = true;
-    for (auto worker_id : actually) {
-      if (!needs.contains(worker_id)) {
-        RAY_LOG(DEBUG) << "Needs missing actually " << worker_id;
-        equal = false;
-      }
-    }
+  //  bool equal = true;
+  //  for (auto worker_id : actually) {
+  //    if (!needs.contains(worker_id)) {
+  //      RAY_LOG(DEBUG) << "Needs missing actually " << worker_id;
+  //      equal = false;
+  //    }
+  //  }
 
-    for (auto worker_id : needs) {
-      if (!actually.contains(worker_id)) {
-        RAY_LOG(DEBUG) << "Actually missing needs " << worker_id;
-        equal = false;
-      }
-    }
+  //  for (auto worker_id : needs) {
+  //    if (!actually.contains(worker_id)) {
+  //      RAY_LOG(DEBUG) << "Actually missing needs " << worker_id;
+  //      equal = false;
+  //    }
+  //  }
 
-    RAY_CHECK(equal && "Found new worker pool policy differs from expected policy");
+  //  RAY_CHECK(equal && "Found new worker pool policy differs from expected policy");
 
-  } else {
-    RAY_LOG(DEBUG) << "Both actually removed and needs remove are empty";
-  }
+  //} else {
+  //  RAY_LOG(DEBUG) << "Both actually removed and needs remove are empty";
+  //}
 
   // Looks like this maintains the same list.
   std::list<std::pair<std::shared_ptr<WorkerInterface>, int64_t>>
@@ -1420,8 +1425,6 @@ void WorkerPool::TryKillingIdleWorkers() {
       idle_of_all_languages_map_.emplace(idle_pair);
     }
   }
-
-
 
   idle_of_all_languages_ = std::move(new_idle_of_all_languages);
   RAY_CHECK(idle_of_all_languages_.size() == idle_of_all_languages_map_.size());
