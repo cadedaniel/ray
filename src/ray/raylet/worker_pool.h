@@ -148,7 +148,6 @@ class IOWorkerPoolInterface {
 
 class WorkerInterface;
 class Worker;
-class WorkerPool;
 class WorkerIdlePoolPolicy;
 
 /// \class WorkerPool
@@ -157,7 +156,6 @@ class WorkerIdlePoolPolicy;
 /// is a container for a unit of work.
 class WorkerPool : public WorkerPoolInterface, public IOWorkerPoolInterface {
  public:
-  std::shared_ptr<WorkerIdlePoolPolicy> idle_pool_policy_;
 
   /// Create a pool and asynchronously start at least the specified number of workers per
   /// language.
@@ -767,6 +765,10 @@ class WorkerPool : public WorkerPoolInterface, public IOWorkerPoolInterface {
   /// Agent manager.
   std::shared_ptr<AgentManager> agent_manager_;
 
+  /// Policy that determines what idle worker processes to kill,
+  /// if any.
+  std::shared_ptr<WorkerIdlePoolPolicy> idle_pool_policy_;
+
   /// Stats
   int64_t process_failed_job_config_missing_ = 0;
   int64_t process_failed_rate_limited_ = 0;
@@ -775,29 +777,56 @@ class WorkerPool : public WorkerPoolInterface, public IOWorkerPoolInterface {
 
   friend class WorkerPoolTest;
   friend class WorkerPoolDriverRegisteredTest;
-  // Maybe not necessary..
+
+  /// Friend class with const reference to WorkerPool.
+  /// This is the first step in breaking out some of the
+  /// stateless components of the WorkerPool.
+  /// There should eventually be a better interface between
+  /// WorkerPoolInterface and a policy component which
+  /// decides the size of the idle pool under different
+  /// conditions.
   friend class WorkerIdlePoolPolicy;
 };
 
+/// \class WorkerIdlePoolPolicy
+///
+/// The WorkerIdlePoolPolicy is responsible for generating a list of workers
+/// to kill if the idle pool has grown beyond the configured num_workers_soft_limit.
+/// It is currently tightly-coupled with the WorkerPool implementation. In the future
+/// it could also be responsible for generating a list of workers to create, so that
+/// the WorkerPool implementation can be limited to implementation of the policy.
 class WorkerIdlePoolPolicy {
     public:
+        /// Create a policy that selects workers to remove based on various
+        /// factors, such as whether or not the idle pool is larger than
+        /// some constant value, the idle time of the workers, and whether the
+        /// assigned job of the workers has finished.
+        ///
+        /// \param worker_pool A const reference to a WorkerPool.
+        /// \param num_workers_soft_limit The soft limit of the number of workers.
         WorkerIdlePoolPolicy(
             const WorkerPool& worker_pool,
             int num_workers_soft_limit
         );
         WorkerIdlePoolPolicy() = delete;
 
+        /// Check the policy and determine if there are any idle workers to remove
+        /// from the idle pool. This may return an empty list.
         std::vector<std::shared_ptr<WorkerInterface>> GetIdleWorkersToRemove() const;
 
     private:
+        /// Populate a vector with idle workers that should be removed. This vector may be empty
+        /// if no workers should be removed.
+        /// \param[out] idle_workers_to_remove The vector of idle workers that should be removed.
+        void PopulateIdleWorkersToRemove(
+            std::vector<std::shared_ptr<WorkerInterface>>& idle_workers_to_remove
+        ) const;
+
+        /// Read-only reference to the WorkerPool.
         const WorkerPool& worker_pool_;
 
         /// The soft limit of the number of registered workers.
         const int num_workers_soft_limit_;
-
-        void PopulateIdleWorkersToRemove(
-            std::vector<std::shared_ptr<WorkerInterface>>& idle_workers_to_remove
-        ) const;
 };
 
 }  // namespace raylet

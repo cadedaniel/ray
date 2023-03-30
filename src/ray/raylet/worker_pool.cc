@@ -1197,7 +1197,6 @@ void WorkerPool::TryKillingIdleWorkers() {
     }
   }
 
-  // Looks like this maintains the same list.
   std::list<std::pair<std::shared_ptr<WorkerInterface>, int64_t>>
       new_idle_of_all_languages;
   idle_of_all_languages_map_.clear();
@@ -1387,24 +1386,6 @@ void WorkerPool::PrestartWorkers(const TaskSpecification &task_spec,
     // TODO(architkulkarni): We'd eventually like to prestart workers with the same
     // runtime env to improve initial startup performance.
   }
-
-  // (the queue is in pool)
-  // This doesn't work because it requires the policy to act on behalf of the pool.
-  // It seems to me that this should be handled directly by the pool (an imperative).
-  // The policy should do level-based adjustments to get to the goal state.
-
-  //PrestartWorkersRequest req{
-  //  .task_spec = task_spec,
-  //  .backlog_size = backlog_size,
-  //  .num_available_cpus = num_available_cpus
-  //};
-  //idle_pool_policy_.EnqueuePrestartWorkersRequest(req);
-  //idle_pool_policy_.SchedulingHint(const TaskSpecification &task_spec, int64_t backlog_size);
-  // The difficulty with scheduling hints is that we need an accurate view of what happens.
-
-  // Really, PrestartWorkers is misnamed.
-  // It's actually "EnsureEnoughWorkers, if not then start creating"
-
 
   auto &state = GetStateForLanguage(task_spec.GetLanguage());
   // The number of available workers that can be used for this task spec.
