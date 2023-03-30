@@ -592,7 +592,7 @@ class WorkerPool : public WorkerPoolInterface, public IOWorkerPoolInterface {
   /// \param process The process of workers.
   /// \return The workers of the given process.
   std::unordered_set<std::shared_ptr<WorkerInterface>> GetWorkersByProcess(
-      const Process &process);
+      const Process &process) const;
   std::unordered_set<std::shared_ptr<WorkerInterface>> ConstGetWorkersByProcess(
       const Process &process) const;
 

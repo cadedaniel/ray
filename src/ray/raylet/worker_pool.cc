@@ -224,7 +224,7 @@ void WorkerIdlePoolPolicy::PopulateIdleWorkersToRemove(std::vector<std::shared_p
       continue;
     }
     auto worker_startup_token = idle_worker->GetStartupToken();
-    const auto& worker_state = states_by_lang_.at(language)->second;
+    const auto& worker_state = worker_pool_.states_by_lang_.at(idle_worker->GetLanguage())->second;
 
     auto it = worker_state.worker_processes.find(worker_startup_token);
     if (it != worker_state.worker_processes.end() && it->second.is_pending_registration) {
@@ -238,7 +238,7 @@ void WorkerIdlePoolPolicy::PopulateIdleWorkersToRemove(std::vector<std::shared_p
     auto process = idle_worker->GetProcess();
     // Make sure all workers in this worker process are idle.
     // This block of code is needed by Java workers.
-    auto workers_in_the_same_process = worker_pool_.ConstGetWorkersByProcess(process);
+    auto workers_in_the_same_process = worker_pool_.GetWorkersByProcess(process);
     bool can_be_killed = true;
     for (const auto &worker : workers_in_the_same_process) {
       // TODO(cade) []->at
@@ -1652,7 +1652,7 @@ std::unordered_set<std::shared_ptr<WorkerInterface>> WorkerPool::ConstGetWorkers
 }
 
 std::unordered_set<std::shared_ptr<WorkerInterface>> WorkerPool::GetWorkersByProcess(
-    const Process &process) {
+    const Process &process) const {
   std::unordered_set<std::shared_ptr<WorkerInterface>> workers_of_process;
   for (auto &entry : states_by_lang_) {
     auto &worker_state = entry.second;
