@@ -224,8 +224,7 @@ void WorkerIdlePoolPolicy::PopulateIdleWorkersToRemove(std::vector<std::shared_p
       continue;
     }
     auto worker_startup_token = idle_worker->GetStartupToken();
-    // TODO deal with constness
-    auto &worker_state = worker_pool_.ConstGetStateForLanguage(idle_worker->GetLanguage());
+    const auto& worker_state = states_by_lang_.at(language)->second;
 
     auto it = worker_state.worker_processes.find(worker_startup_token);
     if (it != worker_state.worker_processes.end() && it->second.is_pending_registration) {
@@ -1493,13 +1492,6 @@ void WorkerPool::DisconnectDriver(const std::shared_ptr<WorkerInterface> &driver
   auto &state = GetStateForLanguage(driver->GetLanguage());
   RAY_CHECK(RemoveWorker(state.registered_drivers, driver));
   MarkPortAsFree(driver->AssignedPort());
-}
-
-inline const WorkerPool::State &WorkerPool::ConstGetStateForLanguage(const Language &language) const {
-  auto state = states_by_lang_.find(language);
-  RAY_CHECK(state != states_by_lang_.end())
-      << "Required Language isn't supported: " << Language_Name(language);
-  return state->second;
 }
 
 inline WorkerPool::State &WorkerPool::GetStateForLanguage(const Language &language) {
