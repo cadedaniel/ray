@@ -545,7 +545,6 @@ class WorkerPool : public WorkerPoolInterface, public IOWorkerPoolInterface {
   /// A helper function that returns the reference of the pool state
   /// for a given language.
   State &GetStateForLanguage(const Language &language);
-  const State &ConstGetStateForLanguage(const Language &language) const;
 
   /// Start a timer to monitor the starting worker process.
   ///
@@ -592,8 +591,6 @@ class WorkerPool : public WorkerPoolInterface, public IOWorkerPoolInterface {
   /// \param process The process of workers.
   /// \return The workers of the given process.
   std::unordered_set<std::shared_ptr<WorkerInterface>> GetWorkersByProcess(
-      const Process &process) const;
-  std::unordered_set<std::shared_ptr<WorkerInterface>> ConstGetWorkersByProcess(
       const Process &process) const;
 
   /// Get either restore or spill worker state from state based on worker_type.
@@ -792,15 +789,15 @@ class WorkerIdlePoolPolicy {
 
         std::vector<std::shared_ptr<WorkerInterface>> GetIdleWorkersToRemove() const;
 
-        void PopulateIdleWorkersToRemove(
-            std::vector<std::shared_ptr<WorkerInterface>>& idle_workers_to_remove
-        ) const;
-
     private:
         const WorkerPool& worker_pool_;
 
         /// The soft limit of the number of registered workers.
         const int num_workers_soft_limit_;
+
+        void PopulateIdleWorkersToRemove(
+            std::vector<std::shared_ptr<WorkerInterface>>& idle_workers_to_remove
+        ) const;
 };
 
 }  // namespace raylet

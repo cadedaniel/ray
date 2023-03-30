@@ -224,7 +224,7 @@ void WorkerIdlePoolPolicy::PopulateIdleWorkersToRemove(std::vector<std::shared_p
       continue;
     }
     auto worker_startup_token = idle_worker->GetStartupToken();
-    const auto& worker_state = worker_pool_.states_by_lang_.at(idle_worker->GetLanguage())->second;
+    const auto& worker_state = worker_pool_.states_by_lang_.at(idle_worker->GetLanguage());
 
     auto it = worker_state.worker_processes.find(worker_startup_token);
     if (it != worker_state.worker_processes.end() && it->second.is_pending_registration) {
@@ -241,7 +241,6 @@ void WorkerIdlePoolPolicy::PopulateIdleWorkersToRemove(std::vector<std::shared_p
     auto workers_in_the_same_process = worker_pool_.GetWorkersByProcess(process);
     bool can_be_killed = true;
     for (const auto &worker : workers_in_the_same_process) {
-      // TODO(cade) []->at
       if (worker_state.idle.count(worker) == 0 ||
           now - worker_pool_.idle_of_all_languages_map_.at(worker) <
               RayConfig::instance().idle_worker_killing_time_threshold_ms()) {
@@ -1635,20 +1634,6 @@ void WorkerPool::TryStartIOWorkers(const Language &language,
       }
     }
   }
-}
-
-std::unordered_set<std::shared_ptr<WorkerInterface>> WorkerPool::ConstGetWorkersByProcess(
-    const Process &process) const {
-  std::unordered_set<std::shared_ptr<WorkerInterface>> workers_of_process;
-  for (auto &entry : states_by_lang_) {
-    auto &worker_state = entry.second;
-    for (const auto &worker : worker_state.registered_workers) {
-      if (worker->GetProcess().GetId() == process.GetId()) {
-        workers_of_process.insert(worker);
-      }
-    }
-  }
-  return workers_of_process;
 }
 
 std::unordered_set<std::shared_ptr<WorkerInterface>> WorkerPool::GetWorkersByProcess(
