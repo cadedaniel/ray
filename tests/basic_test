@@ -23,18 +23,50 @@ def wait_latch(latch):
     while not ray.get(latch.is_ready.remote()):
         time.sleep(0.01)
 
-@ray.remote(num_cpus=1)
+@ray.remote(num_cpus=1, num_gpus=0.01)
 def task(latch):
+    import os
     wait_latch(latch)
+    return os.getpid()
 
 import os
 cpu_count = os.cpu_count()
 
+@ray.remote(num_cpus=1, num_gpus=0.001)
+class PidActor:
+
+    def __init__(self, latch=None):
+        self.latch = latch
+
+    def wait_latch(self):
+        wait_latch(self.latch)
+
+    def getpid(self):
+        import os
+        return os.getpid()
+
+def create_and_del_pid_actor():
+    a = PidActor.remote()
+    pid = ray.get(a.getpid.remote())
+    del a
+    return pid
+
+actor_pid = create_and_del_pid_actor()
+
 latch = Latch.remote(cpu_count)
-ray.get([task.remote(latch) for _ in range(cpu_count)])
 
-ray.get(latch.reset.remote())
-ray.get([task.remote(latch) for _ in range(cpu_count)])
+#while True:
+#    print('iteration')
+#    pids = ray.get([task.remote(latch) for _ in range(cpu_count)])
 
-ray.get(latch.reset.remote())
-ray.get([task.remote(latch) for _ in range(cpu_count)])
+while True:
+    print('iteration')
+    actors = [PidActor.remote(latch) for _ in range(cpu_count)]
+    ray.get([a.wait_latch.remote() for a in actors])
+    ray.get(latch.reset.remote())
+
+#ray.get(latch.reset.remote())
+#ray.get([task.remote(latch) for _ in range(cpu_count)])
+#
+#ray.get(latch.reset.remote())
+#ray.get([task.remote(latch) for _ in range(cpu_count)])
