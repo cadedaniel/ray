@@ -29,7 +29,7 @@ class PhysicalPlan(object):
     num_stages: int
     replica_schedules: List[Schedule]
     replica_configs: List[Config]
-    replica_placements: List[Tuple(PlacementGroup, int)]
+    replica_placements: List[Tuple[PlacementGroup, int]]
 
 
 class PhysicalPlanner(metaclass=ABCMeta):

@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+
+from ray.experimental.parallel_ml.coordinator import Coordinator
+from ray.experimental.parallel_ml.physical_plan import ModuleParition, SimplePhysicalPlanner
+from ray.util.placement_group import placement_group
+
+from torch import nn
+import torch
+
+def gen_logical_plan():
+    
+    import subprocess
+    #subprocess.check_call("pip install -U accelerate 'numpy<1.24' transformers", shell=True)
+    from accelerate import init_empty_weights, load_checkpoint_and_dispatch, infer_auto_device_map, dispatch_model
+    from transformers import AutoConfig, AutoModelForCausalLM
+    checkpoint = "EleutherAI/gpt-neo-125m"
+    config = AutoConfig.from_pretrained(checkpoint)
+    with init_empty_weights():
+        model = AutoModelForCausalLM.from_config(config)
+        model = model.eval()
+        print(model)
+
+    """
+
+    """
+
+    out = ModuleParition(
+        partition_index=0,
+        module=None,
+        module_loader=lambda: None,
+        input_tensor_shape=(1, 2),
+        input_tensor_dtype=torch.float16,
+    )
+
+if __name__ == '__main__':
+    physical_planner = SimplePhysicalPlanner()
+    placement_group = placement_group([{'GPU': 1}, {'GPU': 1}], strategy='STRICT_PACK')
+    logical_plan = gen_logical_plan()
+    
+    coordinator = Coordinator(
+        logical_plan=logical_plan,
+        pg=placement_group,
+        planner=physical_planner,
+    )
