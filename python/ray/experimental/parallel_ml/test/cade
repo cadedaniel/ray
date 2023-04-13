@@ -9,6 +9,7 @@ from ray.experimental.parallel_ml.physical_plan import ModuleParition, SimplePhy
 from ray.util.placement_group import placement_group
 
 from collections import defaultdict
+import functools
 
 from accelerate import init_empty_weights, load_checkpoint_and_dispatch, infer_auto_device_map, dispatch_model
 from accelerate.utils.modeling import set_module_tensor_to_device
@@ -40,7 +41,26 @@ def resolve_module(module, name):
 def gen_logical_plan():
     pass
 
-def custom_forward_pass_pp0(self, *args, **kwargs):
+def extract_blocks(h, block_indices, verbose=False):
+    new_h = torch.nn.ModuleList()
+    unused_h = torch.nn.ModuleList()
+
+    for i, block in enumerate(h):
+        if verbose:
+            print(i, block_indices)
+        if i in block_indices:
+            new_h.append(block)
+        else:
+            unused_h.append(block)
+
+    return new_h, unused_h
+
+def remove_blocks_from_model(transformer, _lightrails_blocks):
+    old_h = transformer.h
+    transformer.h, unused_h = extract_blocks(transformer.h, _lightrails_blocks)
+    # TODO delete unused unused_h
+
+def custom_forward_pass_first_pp(self, *args, **kwargs):
     output_attentions = False
     output_hidden_states = False
     use_cache = False
@@ -49,14 +69,21 @@ def custom_forward_pass_pp0(self, *args, **kwargs):
     attention_mask = None
     head_mask = None
 
+    # hack, didn't realize the class was GPTNeoForCausalLM
+    self = self.transformer
+
+    #_lightrails_blocks = kwargs.pop("_lightrails_blocks")
+    #old_h = self.h
+    #self.h, unused_h = extract_blocks(old_h, _lightrails_blocks)
+    ## TODO delete unused unused_h
+    ## TODO cache model modification
+    #print(f'custom_forward_pass_first_pp blocks: {len(self.h)}')
+
     input_ids = kwargs.pop('input_ids')
     input_shape = input_ids.size()
     input_ids = input_ids.view(-1, input_shape[-1])
     batch_size = input_ids.shape[0]
     device = input_ids.device
-
-    # hack, didn't realize the class was GPTNeoForCausalLM
-    self = self.transformer
 
     past_length = 0
     past_key_values = tuple([None] * len(self.h))
@@ -94,7 +121,7 @@ def custom_forward_pass_pp0(self, *args, **kwargs):
     return hidden_states, output_shape
 
 
-def custom_forward_pass_pp1(self, *args, **kwargs):
+def custom_forward_pass_last_pp(self, *args, **kwargs):
     output_attentions = False
     output_hidden_states = False
     use_cache = False
@@ -109,6 +136,13 @@ def custom_forward_pass_pp1(self, *args, **kwargs):
     # hack, didn't realize the class was GPTNeoForCausalLM
     lm_head = self.lm_head
     self = self.transformer
+
+    #_lightrails_blocks = kwargs.pop("_lightrails_blocks")
+    #old_h = self.h
+    #self.h, unused_h = extract_blocks(old_h, _lightrails_blocks, verbose=True)
+    ## TODO delete unused unused_h
+    ## TODO cache model modification
+    #print(f'custom_forward_pass_last_pp blocks: {len(self.h)}')
 
     past_length = 0
     past_key_values = tuple([None] * len(self.h))
@@ -134,14 +168,71 @@ def custom_forward_pass_pp1(self, *args, **kwargs):
     return lm_head_output
 
 
-def create_custom_forward_pass(pp_rank, partitions, num_blocks):
-    return [custom_forward_pass_pp0, custom_forward_pass_pp1][pp_rank]
+def custom_forward_pass_intermediate_pp(self, *args, **kwargs):
+    output_attentions = False
+    output_hidden_states = False
+    use_cache = False
+    return_dict = False
+    inputs_embeds = None
+    attention_mask = None
+    head_mask = None
+
+    hidden_states = kwargs.pop('hidden_states')
+
+    # hack, didn't realize the class was GPTNeoForCausalLM
+    self = self.transformer
+
+    past_length = 0
+    past_key_values = tuple([None] * len(self.h))
+
+    head_mask = self.get_head_mask(head_mask, self.config.num_layers)
+
+    for i, (block, layer_past) in enumerate(zip(self.h, past_key_values)):
+        outputs = block(
+            hidden_states,
+            layer_past=layer_past,
+            attention_mask=attention_mask,
+            head_mask=head_mask[i],
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+        )
+    
+        hidden_states = outputs[0]
+
+    return hidden_states
+
+def create_custom_forward_pass(forward_pass_type, block_only_partition):
+    if forward_pass_type == "first":
+        return functools.partialmethod(custom_forward_pass_first_pp, _lightrails_blocks=block_only_partition)
+    if forward_pass_type == "last":
+        return functools.partialmethod(custom_forward_pass_last_pp, _lightrails_blocks=block_only_partition)
+    if forward_pass_type == "intermediate":
+        return functools.partialmethod(custom_forward_pass_intermediate_pp, _lightrails_blocks=block_only_partition)
+
+    assert False
+    #return [custom_forward_pass_first_pp, custom_forward_pass_last_pp][pp_rank]
 
 
-def replace_forward_pass(gpt_neo_model, num_blocks, pp_rank, partitions):
+def modify_model_and_replace_forward_pass(gpt_neo_model, num_blocks, pp_rank, partitions):
     assert type(gpt_neo_model) == GPTNeoForCausalLM
 
-    custom_fwd_pass = create_custom_forward_pass(pp_rank, partitions, num_blocks)
+    partition = partitions[pp_rank]
+    block_only_partition = [block for block in partition if block >= 0 and block < num_blocks]
+
+    if -1 in partition:
+        forward_pass_type = "first"
+    elif num_blocks in partition:
+        forward_pass_type = "last"
+    else:
+        forward_pass_type = "intermediate"
+
+    print(f'pp_rank {pp_rank} is type {forward_pass_type}, with blocks {block_only_partition}')
+
+    remove_blocks_from_model(gpt_neo_model.transformer, block_only_partition)
+    custom_fwd_pass = create_custom_forward_pass(
+        forward_pass_type,
+        block_only_partition,
+    )
 
     gpt_neo_model.forward = custom_fwd_pass.__get__(
         gpt_neo_model,
@@ -224,13 +315,17 @@ if True:
         pp_rank_to_block[0].append(-1)
         pp_rank_to_block[num_pp_rank-1].append(num_blocks)
 
+        # Improve readability
+        for _, blocks in pp_rank_to_block.items():
+            blocks.sort()
+
         return pp_rank_to_block
 
     pp_rank_to_block = partition()
     print(pp_rank_to_block)
 
-    replace_forward_pass(model_start, num_blocks, pp_rank=0, partitions=pp_rank_to_block)
-    replace_forward_pass(model_end, num_blocks, pp_rank=1, partitions=pp_rank_to_block)
+    modify_model_and_replace_forward_pass(model_start, num_blocks, pp_rank=0, partitions=pp_rank_to_block)
+    modify_model_and_replace_forward_pass(model_end, num_blocks, pp_rank=1, partitions=pp_rank_to_block)
 
     for _ in range(5):
         hidden_states, output_shape = model_start.forward(
