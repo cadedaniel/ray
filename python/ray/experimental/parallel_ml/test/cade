@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
+# Must be called before import ray
+import subprocess
+#subprocess.check_call("pip install -U accelerate 'numpy<1.24' transformers", shell=True)
+
 from ray.experimental.parallel_ml.coordinator import Coordinator
 from ray.experimental.parallel_ml.physical_plan import ModuleParition, SimplePhysicalPlanner
 from ray.util.placement_group import placement_group
 
-import subprocess
-#subprocess.check_call("pip install -U accelerate 'numpy<1.24' transformers", shell=True)
 from accelerate import init_empty_weights, load_checkpoint_and_dispatch, infer_auto_device_map, dispatch_model
 from accelerate.utils.modeling import set_module_tensor_to_device
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, GPTNeoForCausalLM
