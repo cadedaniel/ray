@@ -10,6 +10,7 @@ from ray.util.placement_group import placement_group
 
 from collections import defaultdict
 import functools
+import copy
 
 from accelerate import init_empty_weights, load_checkpoint_and_dispatch, infer_auto_device_map, dispatch_model
 from accelerate.utils.modeling import set_module_tensor_to_device
@@ -61,6 +62,7 @@ def remove_blocks_from_model(transformer, _lightrails_blocks):
     # TODO delete unused unused_h
 
 def custom_forward_pass_first_pp(self, *args, **kwargs):
+    print('custom_forward_pass_first_pp')
     output_attentions = False
     output_hidden_states = False
     use_cache = False
@@ -122,6 +124,7 @@ def custom_forward_pass_first_pp(self, *args, **kwargs):
 
 
 def custom_forward_pass_last_pp(self, *args, **kwargs):
+    print('custom_forward_pass_last_pp')
     output_attentions = False
     output_hidden_states = False
     use_cache = False
@@ -169,6 +172,7 @@ def custom_forward_pass_last_pp(self, *args, **kwargs):
 
 
 def custom_forward_pass_intermediate_pp(self, *args, **kwargs):
+    print('custom_forward_pass_intermediate_pp')
     output_attentions = False
     output_hidden_states = False
     use_cache = False
@@ -218,7 +222,7 @@ def modify_model_and_replace_forward_pass(gpt_neo_model, num_blocks, pp_rank, pa
 
     partition = partitions[pp_rank]
     block_only_partition = [block for block in partition if block >= 0 and block < num_blocks]
-
+    print('partition', partition)
     if -1 in partition:
         forward_pass_type = "first"
     elif num_blocks in partition:
@@ -290,15 +294,18 @@ if True:
         "lm_head": "cpu",
     }
 
-    model_start = AutoModelForCausalLM.from_config(config)
-    model_start = dispatch_model(model_start, device_map=device_map)
+    #model_start = AutoModelForCausalLM.from_config(config)
+    #model_start = dispatch_model(model_start, device_map=device_map)
 
-    model_end = AutoModelForCausalLM.from_config(config)
-    model_end = dispatch_model(model_end, device_map=device_map)
+    #model_end = AutoModelForCausalLM.from_config(config)
+    #model_end = dispatch_model(model_end, device_map=device_map)
 
-    blocks = resolve_module(model_start, 'transformer.h')
+    model = AutoModelForCausalLM.from_config(config)
+    model = dispatch_model(model, device_map=device_map)
+
+    blocks = resolve_module(model, 'transformer.h')
     num_blocks = len(blocks)
-    num_pp_rank = 4
+    num_pp_rank = 12
     
     def partition(num_blocks=num_blocks, num_pp_rank=num_pp_rank):
         pp_rank_to_block = defaultdict(list)
@@ -324,23 +331,42 @@ if True:
     pp_rank_to_block = partition()
     print(pp_rank_to_block)
 
-    modify_model_and_replace_forward_pass(model_start, num_blocks, pp_rank=0, partitions=pp_rank_to_block)
-    modify_model_and_replace_forward_pass(model_end, num_blocks, pp_rank=1, partitions=pp_rank_to_block)
+    pp_ranks = [model]
+    while len(pp_ranks) < num_pp_rank:
+        cpy = copy.deepcopy(model)
+        pp_ranks.append(cpy)
+
+    out = []
+    for pp_rank, model in enumerate(pp_ranks):
+        modify_model_and_replace_forward_pass(model, num_blocks, pp_rank=pp_rank, partitions=pp_rank_to_block)
+        out.append(model)
+    pp_ranks = out
+
+    #modify_model_and_replace_forward_pass(model_start, num_blocks, pp_rank=0, partitions=pp_rank_to_block)
+    #modify_model_and_replace_forward_pass(model_end, num_blocks, pp_rank=1, partitions=pp_rank_to_block)
 
     for _ in range(5):
-        hidden_states, output_shape = model_start.forward(
-            input_ids=input_ids,
-            return_dict=False,
-            output_attentions=False,
-            output_hidden_states=False,
-        )
-        #print('start got output', hidden_states, output_shape)
 
-        lm_logits = model_end.forward(
-            hidden_states=hidden_states,
-            output_shape=output_shape,
-        )
-        #print('end got output', lm_logits)
+        hidden_states = None
+        output_shape = None
+        lm_logits = None
+        for pp_rank, model in enumerate(pp_ranks):
+            if pp_rank == 0:
+                hidden_states, output_shape = model.forward(
+                    input_ids=input_ids,
+                    return_dict=False,
+                    output_attentions=False,
+                    output_hidden_states=False,
+                )
+            elif pp_rank == len(pp_ranks) - 1:
+                lm_logits = model.forward(
+                    hidden_states=hidden_states,
+                    output_shape=output_shape,
+                )
+            else:
+                hidden_states = model.forward(
+                    hidden_states=hidden_states,
+                )
 
         next_token_logits = lm_logits[:, -1, :]
 
@@ -353,6 +379,8 @@ if True:
         next_tokens = torch.multinomial(probs, num_samples=1).squeeze(1)
         decoded = tokenizer.decode(next_tokens)
         print(f"'{input_sequence}{decoded}'",)
+
+
 
     """
     logits_processor = self._get_logits_processor(
