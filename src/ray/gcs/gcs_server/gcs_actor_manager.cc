@@ -799,7 +799,7 @@ void GcsActorManager::DestroyActor(const ActorID &actor_id,
                                    const rpc::ActorDeathCause &death_cause,
                                    bool force_kill) {
   RAY_LOG(INFO) << "Destroying actor, actor id = " << actor_id
-                << ", job id = " << actor_id.JobId();
+                << ", job id = " << actor_id.JobId() << ", force_kill = " << force_kill;
   actor_to_register_callbacks_.erase(actor_id);
   auto it = registered_actors_.find(actor_id);
   if (it == registered_actors_.end()) {
